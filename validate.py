@@ -140,17 +140,6 @@ def main():
     print(f"Results: {passed}/{total} tests passed")
 
     if passed == total:
-        print("\n🎉 All tests passed! The arch-chroot code has been successfully")
-        print("   converted to a Python library with minimal dependencies.")
-        print("\nKey features:")
-        print("- ✓ Complete chroot environment setup")
-        print("- ✓ Unshare mode for non-root users")
-        print("- ✓ Automatic mount management")
-        print("- ✓ Context manager support")
-        print("- ✓ Command-line interface")
-        print("- ✓ Custom mount support")
-        print("- ✓ Zero external dependencies (stdlib only)")
-
         print("\nUsage:")
         print("  Library: from chorut import ChrootManager")
         print("  CLI:     python -m chorut /path/to/chroot")
