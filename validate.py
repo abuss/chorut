@@ -76,6 +76,34 @@ def test_manager_creation():
         return False
 
 
+def test_custom_mounts():
+    """Test custom mounts functionality."""
+    print("Testing custom mounts...")
+
+    from chorut import ChrootManager
+
+    # Test with custom mount specifications
+    custom_mounts = [
+        {"source": "/tmp", "target": "shared_tmp", "bind": True},
+        {"source": "tmpfs", "target": "workspace", "fstype": "tmpfs", "options": "size=10M"},
+    ]
+
+    try:
+        manager = ChrootManager("/tmp", unshare_mode=True, custom_mounts=custom_mounts)
+        print("✓ ChrootManager with custom mounts created successfully")
+
+        # Validate the custom_mounts attribute
+        assert len(manager.custom_mounts) == 2, "Custom mounts not stored correctly"
+        assert manager.custom_mounts[0]["source"] == "/tmp", "First mount source incorrect"
+        assert manager.custom_mounts[1]["fstype"] == "tmpfs", "Second mount fstype incorrect"
+
+        print("✓ Custom mounts validation successful")
+        return True
+    except Exception as e:
+        print(f"✗ Custom mounts test failed: {e}")
+        return False
+
+
 def test_command_line():
     """Test command-line interface."""
     print("Testing command-line interface...")
@@ -95,7 +123,7 @@ def main():
     print("chorut Library Validation")
     print("=" * 30)
 
-    tests = [test_imports, test_constants, test_manager_creation, test_command_line]
+    tests = [test_imports, test_constants, test_manager_creation, test_custom_mounts, test_command_line]
 
     passed = 0
     total = len(tests)
@@ -120,6 +148,7 @@ def main():
         print("- ✓ Automatic mount management")
         print("- ✓ Context manager support")
         print("- ✓ Command-line interface")
+        print("- ✓ Custom mount support")
         print("- ✓ Zero external dependencies (stdlib only)")
 
         print("\nUsage:")

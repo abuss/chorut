@@ -10,11 +10,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 
 __version__ = "0.1.0"
 
 logger = logging.getLogger(__name__)
+
+# Type alias for mount specifications
+MountSpec = Dict[str, Any]
 
 
 class ChrootError(Exception):
@@ -125,16 +128,27 @@ class MountManager:
 class ChrootManager:
     """Manages chroot environments with proper mount setup and cleanup."""
 
-    def __init__(self, chroot_dir: str | Path, unshare_mode: bool = False):
+    def __init__(
+        self, chroot_dir: str | Path, unshare_mode: bool = False, custom_mounts: List[MountSpec] | None = None
+    ):
         """
         Initialize the chroot manager.
 
         Args:
             chroot_dir: Path to the chroot directory
             unshare_mode: Whether to use unshare mode (for non-root users)
+            custom_mounts: Optional list of custom mount specifications
+                Each mount spec is a dict with keys:
+                - source: Source path/device (required)
+                - target: Target path relative to chroot (required)
+                - fstype: Filesystem type (optional, defaults to auto-detect)
+                - options: Mount options (optional)
+                - bind: Whether this is a bind mount (optional, defaults to False)
+                - mkdir: Whether to create target directory (optional, defaults to True)
         """
         self.chroot_dir = Path(chroot_dir).resolve()
         self.unshare_mode = unshare_mode
+        self.custom_mounts = custom_mounts or []
         self.mount_manager = MountManager()
         self._is_setup = False
 
@@ -253,6 +267,38 @@ class ChrootManager:
 
         return target
 
+    def _setup_custom_mounts(self) -> None:
+        """Set up user-defined custom mounts."""
+        for mount_spec in self.custom_mounts:
+            try:
+                # Validate required fields
+                if "source" not in mount_spec:
+                    raise MountError("Mount specification missing required 'source' field")
+                if "target" not in mount_spec:
+                    raise MountError("Mount specification missing required 'target' field")
+
+                source = mount_spec["source"]
+                target_rel = mount_spec["target"].lstrip("/")  # Remove leading slash for relative path
+                target = str(self.chroot_dir / target_rel)
+
+                # Get optional parameters
+                fstype = mount_spec.get("fstype")
+                options = mount_spec.get("options")
+                bind = mount_spec.get("bind", False)
+                mkdir = mount_spec.get("mkdir", True)
+
+                # Create target directory if requested
+                if mkdir:
+                    Path(target).mkdir(parents=True, exist_ok=True)
+
+                # Perform the mount
+                self.mount_manager.mount(source, target, fstype=fstype, options=options, bind=bind)
+                logger.debug(f"Custom mount: {source} -> {target}")
+
+            except Exception as e:
+                logger.error(f"Failed to setup custom mount {mount_spec}: {e}")
+                raise MountError(f"Failed to setup custom mount: {e}")
+
     def _setup_resolv_conf(self) -> None:
         """Set up resolv.conf in the chroot."""
         host_resolv = "/etc/resolv.conf"
@@ -293,6 +339,7 @@ class ChrootManager:
                 self._setup_standard_mounts()
 
             self._setup_resolv_conf()
+            self._setup_custom_mounts()
             self._is_setup = True
 
             # Check if chroot_dir is a mountpoint
@@ -395,14 +442,47 @@ itself to make it a mountpoint, i.e. 'mount --bind /your/chroot /your/chroot'.
         "-u", "--userspec", metavar="USER[:GROUP]", help="Specify non-root user and optional group to use"
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "-m",
+        "--mount",
+        action="append",
+        metavar="SOURCE:TARGET[:OPTIONS]",
+        help="Add custom mount (can be used multiple times). Format: source:target[:options]",
+    )
 
     args = parser.parse_args()
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
+    # Parse custom mounts
+    custom_mounts = []
+    if args.mount:
+        for mount_spec in args.mount:
+            parts = mount_spec.split(":")
+            if len(parts) < 2:
+                print(
+                    f"Error: Invalid mount specification '{mount_spec}'. Format: source:target[:options]",
+                    file=sys.stderr,
+                )
+                return 1
+
+            mount_dict = {
+                "source": parts[0],
+                "target": parts[1],
+            }
+
+            # Parse options if provided
+            if len(parts) > 2:
+                options = parts[2]
+                if "bind" in options:
+                    mount_dict["bind"] = True
+                mount_dict["options"] = options
+
+            custom_mounts.append(mount_dict)
+
     try:
-        with ChrootManager(args.chroot_dir, unshare_mode=args.unshare) as chroot:
+        with ChrootManager(args.chroot_dir, unshare_mode=args.unshare, custom_mounts=custom_mounts) as chroot:
             result = chroot.execute(args.command if args.command else None, userspec=args.userspec)
             return result.returncode
     except ChrootError as e:
