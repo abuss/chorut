@@ -329,36 +329,121 @@ class ChrootManager:
         if self._is_setup:
             return
 
-        self._check_root()
         self._check_chroot_dir()
 
-        try:
-            if self.unshare_mode:
-                self._setup_unshare_mounts()
-            else:
-                self._setup_standard_mounts()
+        # For unshare mode, skip mount setup as it will be done in the unshared namespace
+        if not self.unshare_mode:
+            self._check_root()
 
-            self._setup_resolv_conf()
-            self._setup_custom_mounts()
-            self._is_setup = True
-
-            # Check if chroot_dir is a mountpoint
             try:
-                result = subprocess.run(["mountpoint", "-q", str(self.chroot_dir)], capture_output=True)
-                if result.returncode != 0:
-                    logger.warning(f"{self.chroot_dir} is not a mountpoint. This may have undesirable side effects.")
-            except FileNotFoundError:
-                pass  # mountpoint command not available
+                self._setup_standard_mounts()
+                self._setup_resolv_conf()
+                self._setup_custom_mounts()
 
-        except Exception as e:
-            self.teardown()
-            raise ChrootError(f"Failed to setup chroot: {e}")
+                # Check if chroot_dir is a mountpoint
+                try:
+                    result = subprocess.run(["mountpoint", "-q", str(self.chroot_dir)], capture_output=True)
+                    if result.returncode != 0:
+                        logger.warning(f"{self.chroot_dir} is not a mountpoint. This may have undesirable side effects.")
+                except FileNotFoundError:
+                    pass  # mountpoint command not available
+
+            except Exception as e:
+                self.teardown()
+                raise ChrootError(f"Failed to setup chroot: {e}")
+
+        self._is_setup = True
 
     def teardown(self) -> None:
         """Tear down the chroot environment."""
         if self._is_setup:
             self.mount_manager.unmount_all()
             self._is_setup = False
+
+    def _create_unshare_script(self, command: List[str], userspec: str | None = None) -> str:
+        """Create a script to run within the unshared namespace."""
+        script_lines = [
+            "#!/bin/bash",
+            "set -e",
+            "",
+            "# Set up basic directories",
+            f"cd '{self.chroot_dir}'",
+            "mkdir -p proc sys dev dev/pts dev/shm run tmp",
+            "",
+            "# Mount essential filesystems",
+            "mount -t proc proc proc",
+            "mount --bind /sys sys 2>/dev/null || mkdir -p sys", 
+            "mount -t tmpfs udev dev",
+            "mkdir -p dev/pts dev/shm",
+            "mount -t devpts devpts dev/pts -o mode=0620,gid=5,nosuid,noexec",
+            "mount -t tmpfs shm dev/shm -o mode=1777,nosuid,nodev",
+            "mount -t tmpfs run run -o nosuid,nodev,mode=0755",
+            "mount -t tmpfs tmp tmp -o mode=1777,strictatime,nodev,nosuid",
+            "",
+            "# Create device symlinks",
+            "ln -sf /proc/self/fd dev/fd",
+            "ln -sf /proc/self/fd/0 dev/stdin", 
+            "ln -sf /proc/self/fd/1 dev/stdout",
+            "ln -sf /proc/self/fd/2 dev/stderr",
+            "",
+            "# Create essential device files",
+        ]
+        
+        for device in ["full", "null", "random", "tty", "urandom", "zero"]:
+            script_lines.append(f"touch dev/{device}")
+            script_lines.append(f"mount --bind /dev/{device} dev/{device}")
+        
+        script_lines.extend([
+            "",
+            "# Set up resolv.conf if available",
+            "if [ -f /etc/resolv.conf ] && [ -d etc ]; then",
+            "    mkdir -p etc",
+            "    if [ ! -f etc/resolv.conf ]; then",
+            "        touch etc/resolv.conf",
+            "    fi",
+            "    mount --bind /etc/resolv.conf etc/resolv.conf 2>/dev/null || true",
+            "fi",
+            "",
+        ])
+        
+        # Add custom mounts
+        for mount_spec in self.custom_mounts:
+            source = mount_spec["source"]
+            target_rel = mount_spec["target"].lstrip("/")
+            fstype = mount_spec.get("fstype")
+            options = mount_spec.get("options")
+            bind = mount_spec.get("bind", False)
+            mkdir = mount_spec.get("mkdir", True)
+            
+            if mkdir:
+                script_lines.append(f"mkdir -p '{target_rel}'")
+            
+            mount_cmd = ["mount"]
+            if bind:
+                mount_cmd.append("--bind")
+            elif fstype:
+                mount_cmd.extend(["-t", fstype])
+            
+            if options:
+                mount_cmd.extend(["-o", options])
+                
+            mount_cmd.extend([f"'{source}'", f"'{target_rel}'"])
+            script_lines.append(" ".join(mount_cmd))
+        
+        script_lines.extend([
+            "",
+            "# Execute the command in chroot",
+        ])
+        
+        chroot_cmd = ["chroot"]
+        if userspec:
+            chroot_cmd.extend(["--userspec", userspec])
+        chroot_cmd.append(".")
+        chroot_cmd.extend(f"'{arg}'" for arg in command)
+        
+        script_lines.append(" ".join(chroot_cmd))
+        
+        return "\n".join(script_lines)
 
     def execute(self, command: List[str] | None = None, userspec: str | None = None) -> subprocess.CompletedProcess:
         """
@@ -377,35 +462,54 @@ class ChrootManager:
         if command is None:
             command = ["/bin/bash"]
 
-        chroot_cmd = ["chroot"]
-        if userspec:
-            chroot_cmd.extend(["--userspec", userspec])
-
-        chroot_cmd.append(str(self.chroot_dir))
-        chroot_cmd.extend(command)
-
         if self.unshare_mode:
-            # Use unshare with proper flags
-            unshare_cmd = [
-                "unshare",
-                "--fork",
-                "--pid",
-                "--mount",
-                "--map-auto",
-                "--map-root-user",
-                "--setuid",
-                "0",
-                "--setgid",
-                "0",
-            ]
-            full_cmd = unshare_cmd + chroot_cmd
+            # For unshare mode, create a script and run it in unshared namespace
+            script_content = self._create_unshare_script(command, userspec)
+            
+            # Write script to a temporary file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+                f.write(script_content)
+                script_path = f.name
+            
+            try:
+                # Make script executable
+                os.chmod(script_path, 0o755)
+                
+                # Run the script in unshared namespace
+                unshare_cmd = [
+                    "unshare",
+                    "--fork",
+                    "--pid", 
+                    "--mount",
+                    "--map-auto",
+                    "--map-root-user",
+                    script_path
+                ]
+                
+                env = os.environ.copy()
+                env["SHELL"] = "/bin/bash"
+                
+                return subprocess.run(unshare_cmd, env=env)
+            finally:
+                # Clean up script file
+                try:
+                    os.unlink(script_path)
+                except OSError:
+                    pass
         else:
-            full_cmd = chroot_cmd
+            # Standard chroot mode
+            chroot_cmd = ["chroot"]
+            if userspec:
+                chroot_cmd.extend(["--userspec", userspec])
 
-        env = os.environ.copy()
-        env["SHELL"] = "/bin/bash"
+            chroot_cmd.append(str(self.chroot_dir))
+            chroot_cmd.extend(command)
 
-        return subprocess.run(full_cmd, env=env)
+            env = os.environ.copy()
+            env["SHELL"] = "/bin/bash"
+
+            return subprocess.run(chroot_cmd, env=env)
 
     def __enter__(self):
         self.setup()

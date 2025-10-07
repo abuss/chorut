@@ -29,8 +29,8 @@ from chorut import ChrootManager
 with ChrootManager('/path/to/chroot') as chroot:
     result = chroot.execute(['ls', '-la'])
 
-# Non-root usage with unshare mode
-with ChrootManager('/path/to/chroot', unshare_mode=True) as chroot:
+# Non-root usage with unshare mode (requires complete chroot environment)
+with ChrootManager('/path/to/complete/chroot', unshare_mode=True) as chroot:
     result = chroot.execute(['whoami'])
 
 # Manual setup/teardown
@@ -108,8 +108,8 @@ sudo chorut /path/to/chroot
 # Run specific command
 sudo chorut /path/to/chroot ls -la
 
-# Non-root mode
-chorut -N /path/to/chroot
+# Non-root mode (requires proper chroot environment)
+chorut -N /path/to/complete/chroot
 
 # Specify user
 sudo chorut -u user:group /path/to/chroot
@@ -188,6 +188,20 @@ ChrootManager(chroot_dir, unshare_mode=False, custom_mounts=None)
 - Python 3.12+
 - Linux system with mount/umount utilities
 - Root privileges (unless using unshare mode)
+
+### Unshare Mode Requirements
+
+When using unshare mode (`-N` flag), the following additional requirements apply:
+
+- `unshare` command must be available
+- The chroot directory must contain a complete filesystem with:
+  - Essential binaries in `/bin`, `/usr/bin`, etc.
+  - Required libraries in `/lib`, `/lib64`, `/usr/lib`, etc.
+  - Proper directory structure (`/etc`, `/proc`, `/sys`, `/dev`, etc.)
+
+**Note**: Unshare mode performs all mount operations within an unshared mount namespace, allowing non-root users to create chroot environments. However, the target directory must still contain a complete, functional filesystem for the chroot to work properly.
+
+For example, trying to chroot into `/tmp` will fail because it lacks the necessary binaries and libraries. You need a proper root filesystem (like those created by `debootstrap`, `pacstrap`, or similar tools).
 
 ## License
 
