@@ -16,94 +16,6 @@ __version__ = "0.1.0"
 
 logger = logging.getLogger(__name__)
 
-# Generated from util-linux source: libmount/src/utils.c
-PSEUDOFS_TYPES = {
-    "anon_inodefs",
-    "apparmorfs",
-    "autofs",
-    "bdev",
-    "binder",
-    "binfmt_misc",
-    "bpf",
-    "cgroup",
-    "cgroup2",
-    "configfs",
-    "cpuset",
-    "debugfs",
-    "devfs",
-    "devpts",
-    "devtmpfs",
-    "dlmfs",
-    "dmabuf",
-    "drm",
-    "efivarfs",
-    "fuse",
-    "fuse.archivemount",
-    "fuse.avfsd",
-    "fuse.dumpfs",
-    "fuse.encfs",
-    "fuse.gvfs-fuse-daemon",
-    "fuse.gvfsd-fuse",
-    "fuse.lxcfs",
-    "fuse.rofiles-fuse",
-    "fuse.vmware-vmblock",
-    "fuse.xwmfs",
-    "fusectl",
-    "hugetlbfs",
-    "ipathfs",
-    "mqueue",
-    "nfsd",
-    "none",
-    "nsfs",
-    "overlay",
-    "pipefs",
-    "proc",
-    "pstore",
-    "ramfs",
-    "resctrl",
-    "rootfs",
-    "rpc_pipefs",
-    "securityfs",
-    "selinuxfs",
-    "smackfs",
-    "sockfs",
-    "spufs",
-    "sysfs",
-    "tmpfs",
-    "tracefs",
-    "vboxsf",
-    "virtiofs",
-}
-
-# Generated from: pkgfile -vbr '/fsck\..+' | awk -F. '{ print $NF }' | sort
-FSCK_TYPES = {
-    "btrfs": False,  # btrfs doesn't need a regular fsck utility
-    "cramfs": True,
-    "erofs": True,
-    "exfat": True,
-    "ext2": True,
-    "ext3": True,
-    "ext4": True,
-    "f2fs": True,
-    "fat": True,
-    "jfs": True,
-    "minix": True,
-    "msdos": True,
-    "reiserfs": True,
-    "vfat": True,
-    "xfs": True,
-}
-
-
-def is_pseudofs(fstype: str) -> bool:
-    """Check if filesystem type is a pseudo filesystem."""
-    return fstype in PSEUDOFS_TYPES
-
-
-def has_fsck(fstype: str) -> bool:
-    """Check if filesystem type has fsck utility."""
-    return FSCK_TYPES.get(fstype, False)
-
 
 class ChrootError(Exception):
     """Exception raised for chroot-related errors."""
@@ -508,8 +420,4 @@ __all__ = [
     "ChrootError",
     "MountManager",
     "MountError",
-    "PSEUDOFS_TYPES",
-    "FSCK_TYPES",
-    "is_pseudofs",
-    "has_fsck",
 ]

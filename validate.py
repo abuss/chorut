@@ -18,10 +18,6 @@ def test_imports():
             ChrootError,
             MountManager,
             MountError,
-            PSEUDOFS_TYPES,
-            FSCK_TYPES,
-            is_pseudofs,
-            has_fsck,
             __version__,
         )
 
@@ -33,22 +29,24 @@ def test_imports():
 
 
 def test_constants():
-    """Test filesystem type constants."""
-    print("Testing constants...")
+    """Test basic library functionality."""
+    print("Testing basic functionality...")
 
-    from chorut import is_pseudofs, has_fsck, PSEUDOFS_TYPES, FSCK_TYPES
+    from chorut import ChrootManager, MountManager
 
-    # Test pseudofs detection
-    assert is_pseudofs("proc"), "proc should be pseudofs"
-    assert is_pseudofs("sysfs"), "sysfs should be pseudofs"
-    assert not is_pseudofs("ext4"), "ext4 should not be pseudofs"
+    # Test ChrootManager initialization
+    try:
+        manager = ChrootManager("/tmp", unshare_mode=True)
+        print("✓ ChrootManager creation successful")
 
-    # Test fsck detection
-    assert has_fsck("ext4"), "ext4 should have fsck"
-    assert not has_fsck("btrfs"), "btrfs should not need fsck"
+        # Test MountManager initialization
+        mount_mgr = MountManager()
+        print("✓ MountManager creation successful")
 
-    print(f"✓ Constants working ({len(PSEUDOFS_TYPES)} pseudofs, {len(FSCK_TYPES)} fsck types)")
-    return True
+        return True
+    except Exception as e:
+        print(f"✗ Basic functionality test failed: {e}")
+        return False
 
 
 def test_manager_creation():
