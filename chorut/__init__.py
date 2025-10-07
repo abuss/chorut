@@ -1,0 +1,515 @@
+"""
+Python library for arch-chroot functionality.
+
+This library provides the ability to set up and manage chroot environments
+similar to the arch-chroot tool, using only Python standard library modules.
+"""
+
+import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import List
+
+__version__ = "0.1.0"
+
+logger = logging.getLogger(__name__)
+
+# Generated from util-linux source: libmount/src/utils.c
+PSEUDOFS_TYPES = {
+    "anon_inodefs",
+    "apparmorfs",
+    "autofs",
+    "bdev",
+    "binder",
+    "binfmt_misc",
+    "bpf",
+    "cgroup",
+    "cgroup2",
+    "configfs",
+    "cpuset",
+    "debugfs",
+    "devfs",
+    "devpts",
+    "devtmpfs",
+    "dlmfs",
+    "dmabuf",
+    "drm",
+    "efivarfs",
+    "fuse",
+    "fuse.archivemount",
+    "fuse.avfsd",
+    "fuse.dumpfs",
+    "fuse.encfs",
+    "fuse.gvfs-fuse-daemon",
+    "fuse.gvfsd-fuse",
+    "fuse.lxcfs",
+    "fuse.rofiles-fuse",
+    "fuse.vmware-vmblock",
+    "fuse.xwmfs",
+    "fusectl",
+    "hugetlbfs",
+    "ipathfs",
+    "mqueue",
+    "nfsd",
+    "none",
+    "nsfs",
+    "overlay",
+    "pipefs",
+    "proc",
+    "pstore",
+    "ramfs",
+    "resctrl",
+    "rootfs",
+    "rpc_pipefs",
+    "securityfs",
+    "selinuxfs",
+    "smackfs",
+    "sockfs",
+    "spufs",
+    "sysfs",
+    "tmpfs",
+    "tracefs",
+    "vboxsf",
+    "virtiofs",
+}
+
+# Generated from: pkgfile -vbr '/fsck\..+' | awk -F. '{ print $NF }' | sort
+FSCK_TYPES = {
+    "btrfs": False,  # btrfs doesn't need a regular fsck utility
+    "cramfs": True,
+    "erofs": True,
+    "exfat": True,
+    "ext2": True,
+    "ext3": True,
+    "ext4": True,
+    "f2fs": True,
+    "fat": True,
+    "jfs": True,
+    "minix": True,
+    "msdos": True,
+    "reiserfs": True,
+    "vfat": True,
+    "xfs": True,
+}
+
+
+def is_pseudofs(fstype: str) -> bool:
+    """Check if filesystem type is a pseudo filesystem."""
+    return fstype in PSEUDOFS_TYPES
+
+
+def has_fsck(fstype: str) -> bool:
+    """Check if filesystem type has fsck utility."""
+    return FSCK_TYPES.get(fstype, False)
+
+
+class ChrootError(Exception):
+    """Exception raised for chroot-related errors."""
+
+    pass
+
+
+class MountError(Exception):
+    """Exception raised for mount-related errors."""
+
+    pass
+
+
+class MountManager:
+    """Manages filesystem mounts for chroot environments."""
+
+    def __init__(self):
+        self.active_mounts: List[str] = []
+        self.active_lazy: List[str] = []
+        self.active_files: List[str] = []
+
+    def mount(
+        self, source: str, target: str, fstype: str | None = None, options: str | None = None, bind: bool = False
+    ) -> None:
+        """Mount a filesystem and track it for cleanup."""
+        cmd = ["mount"]
+
+        if bind:
+            cmd.append("--bind")
+        elif fstype:
+            cmd.extend(["-t", fstype])
+
+        if options:
+            cmd.extend(["-o", options])
+
+        cmd.extend([source, target])
+
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            self.active_mounts.insert(0, target)  # Insert at beginning for reverse order unmount
+            logger.debug(f"Mounted {source} at {target}")
+        except subprocess.CalledProcessError as e:
+            raise MountError(f"Failed to mount {source} at {target}: {e.stderr}")
+
+    def mount_lazy(self, source: str, target: str, bind: bool = False) -> None:
+        """Mount with lazy unmount tracking."""
+        self.mount(source, target, bind=bind)
+        # Move from active_mounts to active_lazy
+        if target in self.active_mounts:
+            self.active_mounts.remove(target)
+            self.active_lazy.insert(0, target)
+
+    def bind_device(self, source: str, target: str) -> None:
+        """Bind mount a device file."""
+        # Create the target file
+        Path(target).touch()
+        self.active_files.insert(0, target)
+        self.mount(source, target, bind=True)
+
+    def create_symlink(self, source: str, target: str) -> None:
+        """Create a symbolic link and track it for cleanup."""
+        try:
+            os.symlink(source, target)
+            self.active_files.insert(0, target)
+            logger.debug(f"Created symlink {target} -> {source}")
+        except OSError as e:
+            raise MountError(f"Failed to create symlink {target} -> {source}: {e}")
+
+    def unmount_all(self) -> None:
+        """Unmount all tracked mounts."""
+        # Unmount regular mounts
+        for mount_point in self.active_mounts:
+            try:
+                subprocess.run(["umount", mount_point], check=True, capture_output=True)
+                logger.debug(f"Unmounted {mount_point}")
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Failed to unmount {mount_point}: {e.stderr}")
+
+        # Lazy unmount
+        for mount_point in self.active_lazy:
+            try:
+                subprocess.run(["umount", "--lazy", mount_point], check=True, capture_output=True)
+                logger.debug(f"Lazy unmounted {mount_point}")
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Failed to lazy unmount {mount_point}: {e.stderr}")
+
+        # Remove created files/symlinks
+        for file_path in self.active_files:
+            try:
+                os.unlink(file_path)
+                logger.debug(f"Removed {file_path}")
+            except OSError as e:
+                logger.warning(f"Failed to remove {file_path}: {e}")
+
+        # Clear tracking lists
+        self.active_mounts.clear()
+        self.active_lazy.clear()
+        self.active_files.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.unmount_all()
+
+
+class ChrootManager:
+    """Manages chroot environments with proper mount setup and cleanup."""
+
+    def __init__(self, chroot_dir: str | Path, unshare_mode: bool = False):
+        """
+        Initialize the chroot manager.
+
+        Args:
+            chroot_dir: Path to the chroot directory
+            unshare_mode: Whether to use unshare mode (for non-root users)
+        """
+        self.chroot_dir = Path(chroot_dir).resolve()
+        self.unshare_mode = unshare_mode
+        self.mount_manager = MountManager()
+        self._is_setup = False
+
+    def _check_root(self) -> None:
+        """Check if running as root (required for normal mode)."""
+        if not self.unshare_mode and os.getuid() != 0:
+            raise ChrootError("This operation requires root privileges. Use unshare_mode=True for non-root operation.")
+
+    def _check_chroot_dir(self) -> None:
+        """Validate the chroot directory."""
+        if not self.chroot_dir.is_dir():
+            raise ChrootError(f"Chroot directory does not exist: {self.chroot_dir}")
+
+    def _setup_standard_mounts(self) -> None:
+        """Set up standard filesystem mounts for chroot."""
+        proc_dir = self.chroot_dir / "proc"
+        sys_dir = self.chroot_dir / "sys"
+        dev_dir = self.chroot_dir / "dev"
+
+        # Create directories if they don't exist
+        proc_dir.mkdir(exist_ok=True)
+        sys_dir.mkdir(exist_ok=True)
+        dev_dir.mkdir(exist_ok=True)
+
+        # Mount proc
+        self.mount_manager.mount("proc", str(proc_dir), fstype="proc", options="nosuid,noexec,nodev")
+
+        # Mount sys
+        self.mount_manager.mount("sys", str(sys_dir), fstype="sysfs", options="nosuid,noexec,nodev,ro")
+
+        # Mount efivarfs if available
+        efivarfs_dir = sys_dir / "firmware/efi/efivars"
+        if efivarfs_dir.exists():
+            try:
+                self.mount_manager.mount(
+                    "efivarfs", str(efivarfs_dir), fstype="efivarfs", options="nosuid,noexec,nodev"
+                )
+            except MountError:
+                # Ignore if efivarfs mount fails
+                pass
+
+        # Mount dev
+        self.mount_manager.mount("udev", str(dev_dir), fstype="devtmpfs", options="mode=0755,nosuid")
+
+        # Mount devpts
+        devpts_dir = dev_dir / "pts"
+        devpts_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("devpts", str(devpts_dir), fstype="devpts", options="mode=0620,gid=5,nosuid,noexec")
+
+        # Mount shm
+        shm_dir = dev_dir / "shm"
+        shm_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("shm", str(shm_dir), fstype="tmpfs", options="mode=1777,nosuid,nodev")
+
+        # Mount run
+        run_dir = self.chroot_dir / "run"
+        run_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("run", str(run_dir), fstype="tmpfs", options="nosuid,nodev,mode=0755")
+
+        # Mount tmp
+        tmp_dir = self.chroot_dir / "tmp"
+        tmp_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("tmp", str(tmp_dir), fstype="tmpfs", options="mode=1777,strictatime,nodev,nosuid")
+
+    def _setup_unshare_mounts(self) -> None:
+        """Set up mounts for unshare mode."""
+        # Bind mount the chroot directory to itself
+        self.mount_manager.mount_lazy(str(self.chroot_dir), str(self.chroot_dir), bind=True)
+
+        # Mount proc
+        proc_dir = self.chroot_dir / "proc"
+        proc_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("proc", str(proc_dir), fstype="proc", options="nosuid,noexec,nodev")
+
+        # Recursive bind mount sys
+        sys_dir = self.chroot_dir / "sys"
+        sys_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount_lazy("/sys", str(sys_dir), bind=True)
+
+        # Create device symlinks
+        dev_dir = self.chroot_dir / "dev"
+        dev_dir.mkdir(exist_ok=True)
+
+        self.mount_manager.create_symlink("/proc/self/fd", str(dev_dir / "fd"))
+        self.mount_manager.create_symlink("/proc/self/fd/0", str(dev_dir / "stdin"))
+        self.mount_manager.create_symlink("/proc/self/fd/1", str(dev_dir / "stdout"))
+        self.mount_manager.create_symlink("/proc/self/fd/2", str(dev_dir / "stderr"))
+
+        # Bind mount essential devices
+        for device in ["full", "null", "random", "tty", "urandom", "zero"]:
+            self.mount_manager.bind_device(f"/dev/{device}", str(dev_dir / device))
+
+        # Mount run and tmp
+        run_dir = self.chroot_dir / "run"
+        run_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("run", str(run_dir), fstype="tmpfs", options="nosuid,nodev,mode=0755")
+
+        tmp_dir = self.chroot_dir / "tmp"
+        tmp_dir.mkdir(exist_ok=True)
+        self.mount_manager.mount("tmp", str(tmp_dir), fstype="tmpfs", options="mode=1777,strictatime,nodev,nosuid")
+
+    def _resolve_link(self, path: str, root: str | None = None) -> str:
+        """Resolve symbolic links, similar to the bash version."""
+        target = path
+        if root and not root.endswith("/"):
+            root = root + "/"
+
+        while os.path.islink(target):
+            target = os.readlink(target)
+            if not os.path.isabs(target):
+                target = os.path.join(os.path.dirname(path), target)
+            target = os.path.normpath(target)
+
+            if root and not target.startswith(root):
+                target = root + target.lstrip("/")
+
+        return target
+
+    def _setup_resolv_conf(self) -> None:
+        """Set up resolv.conf in the chroot."""
+        host_resolv = "/etc/resolv.conf"
+        chroot_resolv = self.chroot_dir / "etc/resolv.conf"
+
+        # Resolve symbolic links
+        src = self._resolve_link(host_resolv)
+        dest = self._resolve_link(str(chroot_resolv), str(self.chroot_dir))
+
+        if not os.path.exists(src):
+            return  # No source resolv.conf
+
+        if not os.path.exists(dest):
+            if dest == str(chroot_resolv):
+                return  # No resolv.conf needed in chroot
+
+            # Create dummy file for binding
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            Path(dest).touch()
+
+        try:
+            self.mount_manager.mount(src, dest, bind=True)
+        except MountError as e:
+            logger.warning(f"Failed to setup resolv.conf: {e}")
+
+    def setup(self) -> None:
+        """Set up the chroot environment."""
+        if self._is_setup:
+            return
+
+        self._check_root()
+        self._check_chroot_dir()
+
+        try:
+            if self.unshare_mode:
+                self._setup_unshare_mounts()
+            else:
+                self._setup_standard_mounts()
+
+            self._setup_resolv_conf()
+            self._is_setup = True
+
+            # Check if chroot_dir is a mountpoint
+            try:
+                result = subprocess.run(["mountpoint", "-q", str(self.chroot_dir)], capture_output=True)
+                if result.returncode != 0:
+                    logger.warning(f"{self.chroot_dir} is not a mountpoint. This may have undesirable side effects.")
+            except FileNotFoundError:
+                pass  # mountpoint command not available
+
+        except Exception as e:
+            self.teardown()
+            raise ChrootError(f"Failed to setup chroot: {e}")
+
+    def teardown(self) -> None:
+        """Tear down the chroot environment."""
+        if self._is_setup:
+            self.mount_manager.unmount_all()
+            self._is_setup = False
+
+    def execute(self, command: List[str] | None = None, userspec: str | None = None) -> subprocess.CompletedProcess:
+        """
+        Execute a command in the chroot environment.
+
+        Args:
+            command: Command to execute (defaults to ['/bin/bash'])
+            userspec: User specification in format 'user' or 'user:group'
+
+        Returns:
+            CompletedProcess object with the result
+        """
+        if not self._is_setup:
+            raise ChrootError("Chroot environment not set up. Call setup() first.")
+
+        if command is None:
+            command = ["/bin/bash"]
+
+        chroot_cmd = ["chroot"]
+        if userspec:
+            chroot_cmd.extend(["--userspec", userspec])
+
+        chroot_cmd.append(str(self.chroot_dir))
+        chroot_cmd.extend(command)
+
+        if self.unshare_mode:
+            # Use unshare with proper flags
+            unshare_cmd = [
+                "unshare",
+                "--fork",
+                "--pid",
+                "--mount",
+                "--map-auto",
+                "--map-root-user",
+                "--setuid",
+                "0",
+                "--setgid",
+                "0",
+            ]
+            full_cmd = unshare_cmd + chroot_cmd
+        else:
+            full_cmd = chroot_cmd
+
+        env = os.environ.copy()
+        env["SHELL"] = "/bin/bash"
+
+        return subprocess.run(full_cmd, env=env)
+
+    def __enter__(self):
+        self.setup()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.teardown()
+
+
+# Main entry point for command-line usage
+def main():
+    """Command-line interface for chorut."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Python implementation of arch-chroot",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+If 'command' is unspecified, chorut will launch /bin/bash.
+
+Note that when using chorut, the target chroot directory *should* be a
+mountpoint. This ensures that tools such as pacman(8) or findmnt(8) have an
+accurate hierarchy of the mounted filesystems within the chroot.
+
+If your chroot target is not a mountpoint, you can bind mount the directory on
+itself to make it a mountpoint, i.e. 'mount --bind /your/chroot /your/chroot'.
+        """,
+    )
+
+    parser.add_argument("chroot_dir", help="chroot directory")
+    parser.add_argument("command", nargs="*", help="command and arguments to execute")
+    parser.add_argument("-N", "--unshare", action="store_true", help="Run in unshare mode as a regular user")
+    parser.add_argument(
+        "-u", "--userspec", metavar="USER[:GROUP]", help="Specify non-root user and optional group to use"
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    try:
+        with ChrootManager(args.chroot_dir, unshare_mode=args.unshare) as chroot:
+            result = chroot.execute(args.command if args.command else None, userspec=args.userspec)
+            return result.returncode
+    except ChrootError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    exit(main())
+
+__all__ = [
+    "ChrootManager",
+    "ChrootError",
+    "MountManager",
+    "MountError",
+    "PSEUDOFS_TYPES",
+    "FSCK_TYPES",
+    "is_pseudofs",
+    "has_fsck",
+]

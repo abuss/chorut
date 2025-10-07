@@ -1,0 +1,14 @@
+[project]
+name = "chorut"
+version = "0.1.0"
+description = "Python implementation of arch-chroot functionality"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+chorut = "chorut:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
