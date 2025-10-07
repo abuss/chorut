@@ -344,7 +344,9 @@ class ChrootManager:
                 try:
                     result = subprocess.run(["mountpoint", "-q", str(self.chroot_dir)], capture_output=True)
                     if result.returncode != 0:
-                        logger.warning(f"{self.chroot_dir} is not a mountpoint. This may have undesirable side effects.")
+                        logger.warning(
+                            f"{self.chroot_dir} is not a mountpoint. This may have undesirable side effects."
+                        )
                 except FileNotFoundError:
                     pass  # mountpoint command not available
 
@@ -362,51 +364,97 @@ class ChrootManager:
 
     def _create_unshare_script(self, command: List[str], userspec: str | None = None) -> str:
         """Create a script to run within the unshared namespace."""
+        # Check if verbose logging is enabled
+        verbose = logger.isEnabledFor(logging.DEBUG)
+
         script_lines = [
             "#!/bin/bash",
             "set -e",
             "",
-            "# Set up basic directories",
-            f"cd '{self.chroot_dir}'",
-            "mkdir -p proc sys dev dev/pts dev/shm run tmp",
-            "",
-            "# Mount essential filesystems",
-            "mount -t proc proc proc",
-            "mount --bind /sys sys 2>/dev/null || mkdir -p sys", 
-            "mount -t tmpfs udev dev",
-            "mkdir -p dev/pts dev/shm",
-            "mount -t devpts devpts dev/pts -o mode=0620,gid=5,nosuid,noexec",
-            "mount -t tmpfs shm dev/shm -o mode=1777,nosuid,nodev",
-            "mount -t tmpfs run run -o nosuid,nodev,mode=0755",
-            "mount -t tmpfs tmp tmp -o mode=1777,strictatime,nodev,nosuid",
-            "",
-            "# Create device symlinks",
-            "ln -sf /proc/self/fd dev/fd",
-            "ln -sf /proc/self/fd/0 dev/stdin", 
-            "ln -sf /proc/self/fd/1 dev/stdout",
-            "ln -sf /proc/self/fd/2 dev/stderr",
-            "",
-            "# Create essential device files",
         ]
-        
+
+        if verbose:
+            script_lines.extend(
+                [
+                    "echo 'Setting up unshare chroot environment...'",
+                    "echo 'Target directory: " + str(self.chroot_dir) + "'",
+                    "",
+                ]
+            )
+
+        script_lines.extend(
+            [
+                "# Set up basic directories",
+                f"cd '{self.chroot_dir}'",
+            ]
+        )
+
+        if verbose:
+            script_lines.append("echo 'Creating directory structure...'")
+
+        script_lines.extend(
+            [
+                "mkdir -p proc sys dev dev/pts dev/shm run tmp",
+                "",
+            ]
+        )
+
+        if verbose:
+            script_lines.append("echo 'Mounting essential filesystems...'")
+
+        script_lines.extend(
+            [
+                "# Mount essential filesystems",
+                "mount -t proc proc proc",
+                "mount --bind /sys sys 2>/dev/null || mkdir -p sys",
+                "mount -t tmpfs udev dev",
+                "mkdir -p dev/pts dev/shm",
+                "mount -t devpts devpts dev/pts -o mode=0620,gid=5,nosuid,noexec",
+                "mount -t tmpfs shm dev/shm -o mode=1777,nosuid,nodev",
+                "mount -t tmpfs run run -o nosuid,nodev,mode=0755",
+                "mount -t tmpfs tmp tmp -o mode=1777,strictatime,nodev,nosuid",
+                "",
+            ]
+        )
+
+        if verbose:
+            script_lines.append("echo 'Setting up device files...'")
+
+        script_lines.extend(
+            [
+                "# Create device symlinks",
+                "ln -sf /proc/self/fd dev/fd",
+                "ln -sf /proc/self/fd/0 dev/stdin",
+                "ln -sf /proc/self/fd/1 dev/stdout",
+                "ln -sf /proc/self/fd/2 dev/stderr",
+                "",
+                "# Create essential device files",
+            ]
+        )
+
         for device in ["full", "null", "random", "tty", "urandom", "zero"]:
             script_lines.append(f"touch dev/{device}")
             script_lines.append(f"mount --bind /dev/{device} dev/{device}")
-        
-        script_lines.extend([
-            "",
-            "# Set up resolv.conf if available",
-            "if [ -f /etc/resolv.conf ] && [ -d etc ]; then",
-            "    mkdir -p etc",
-            "    if [ ! -f etc/resolv.conf ]; then",
-            "        touch etc/resolv.conf",
-            "    fi",
-            "    mount --bind /etc/resolv.conf etc/resolv.conf 2>/dev/null || true",
-            "fi",
-            "",
-        ])
-        
+
+        script_lines.extend(
+            [
+                "",
+                "# Set up resolv.conf if available",
+                "if [ -f /etc/resolv.conf ] && [ -d etc ]; then",
+                "    mkdir -p etc",
+                "    if [ ! -f etc/resolv.conf ]; then",
+                "        touch etc/resolv.conf",
+                "    fi",
+                "    mount --bind /etc/resolv.conf etc/resolv.conf 2>/dev/null || true",
+                "fi",
+                "",
+            ]
+        )
+
         # Add custom mounts
+        if self.custom_mounts and verbose:
+            script_lines.append("echo 'Setting up custom mounts...'")
+
         for mount_spec in self.custom_mounts:
             source = mount_spec["source"]
             target_rel = mount_spec["target"].lstrip("/")
@@ -414,35 +462,44 @@ class ChrootManager:
             options = mount_spec.get("options")
             bind = mount_spec.get("bind", False)
             mkdir = mount_spec.get("mkdir", True)
-            
+
+            if verbose:
+                script_lines.append(f"echo 'Mounting {source} -> {target_rel}'")
+
             if mkdir:
                 script_lines.append(f"mkdir -p '{target_rel}'")
-            
+
             mount_cmd = ["mount"]
             if bind:
                 mount_cmd.append("--bind")
             elif fstype:
                 mount_cmd.extend(["-t", fstype])
-            
+
             if options:
                 mount_cmd.extend(["-o", options])
-                
+
             mount_cmd.extend([f"'{source}'", f"'{target_rel}'"])
             script_lines.append(" ".join(mount_cmd))
-        
-        script_lines.extend([
-            "",
-            "# Execute the command in chroot",
-        ])
-        
+
+        script_lines.extend(
+            [
+                "",
+            ]
+        )
+
+        if verbose:
+            script_lines.append("echo 'Entering chroot and executing command...'")
+
+        script_lines.append("# Execute the command in chroot")
+
         chroot_cmd = ["chroot"]
         if userspec:
             chroot_cmd.extend(["--userspec", userspec])
         chroot_cmd.append(".")
         chroot_cmd.extend(f"'{arg}'" for arg in command)
-        
+
         script_lines.append(" ".join(chroot_cmd))
-        
+
         return "\n".join(script_lines)
 
     def execute(self, command: List[str] | None = None, userspec: str | None = None) -> subprocess.CompletedProcess:
@@ -464,37 +521,38 @@ class ChrootManager:
 
         if self.unshare_mode:
             # For unshare mode, create a script and run it in unshared namespace
+            logger.debug("Creating unshare script for command: %s", command)
             script_content = self._create_unshare_script(command, userspec)
-            
+
             # Write script to a temporary file
             import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
                 f.write(script_content)
                 script_path = f.name
-            
+
+            logger.debug("Unshare script written to: %s", script_path)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Script content:\n%s", script_content)
+
             try:
                 # Make script executable
                 os.chmod(script_path, 0o755)
-                
+
                 # Run the script in unshared namespace
-                unshare_cmd = [
-                    "unshare",
-                    "--fork",
-                    "--pid", 
-                    "--mount",
-                    "--map-auto",
-                    "--map-root-user",
-                    script_path
-                ]
-                
+                unshare_cmd = ["unshare", "--fork", "--pid", "--mount", "--map-auto", "--map-root-user", script_path]
+
+                logger.debug("Executing unshare command: %s", " ".join(unshare_cmd))
+
                 env = os.environ.copy()
                 env["SHELL"] = "/bin/bash"
-                
+
                 return subprocess.run(unshare_cmd, env=env)
             finally:
                 # Clean up script file
                 try:
                     os.unlink(script_path)
+                    logger.debug("Cleaned up script file: %s", script_path)
                 except OSError:
                     pass
         else:
