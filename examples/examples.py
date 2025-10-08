@@ -3,8 +3,9 @@
 Example usage of the chorut library.
 """
 
-from chorut import ChrootManager, ChrootError
 import sys
+
+from chorut import ChrootError, ChrootManager
 
 
 def example_basic_usage():

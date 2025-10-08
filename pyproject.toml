@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "chorut"
 version = "0.1.0"
-description = "Python implementation of arch-chroot functionality with minimal dependencies"
+description = "Python implementation of an enhanced chroot functionality with minimal dependencies"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "chorut contributors"}
+    {name = "Antal Buss"}
 ]
 keywords = ["chroot", "arch-chroot", "containers", "linux", "namespaces"]
 classifiers = [
@@ -39,10 +39,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sst/chorut"
-Repository = "https://github.com/sst/chorut.git"
-Issues = "https://github.com/sst/chorut/issues"
-Documentation = "https://github.com/sst/chorut#readme"
+Homepage = "https://github.com/abuss/chorut"
+Repository = "https://github.com/abuss/chorut.git"
+Issues = "https://github.com/abuss/chorut/issues"
+Documentation = "https://github.com/abuss/chorut#readme"
 
 [project.scripts]
 chorut = "chorut:main"
@@ -63,8 +63,12 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "C4", "B", "A", "T20"]
-ignore = ["E501"]  # Line too long (handled by formatter)
+# select = ["E", "F", "W", "I", "N", "UP", "C4", "B", "A", "T20"]
+select = ["E","F","W","I","UP","B","SIM","PT","RUF"]
+ignore = ["E501", "C901"]  # Line too long (handled by formatter)
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

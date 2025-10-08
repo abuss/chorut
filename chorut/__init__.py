@@ -5,19 +5,20 @@ This library provides the ability to set up and manage chroot environments
 similar to the arch-chroot tool, using only Python standard library modules.
 """
 
+import contextlib
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any
 
 __version__ = "0.1.0"
 
 logger = logging.getLogger(__name__)
 
 # Type alias for mount specifications
-MountSpec = Dict[str, Any]
+MountSpec = dict[str, Any]
 
 
 class ChrootError(Exception):
@@ -36,9 +37,9 @@ class MountManager:
     """Manages filesystem mounts for chroot environments."""
 
     def __init__(self):
-        self.active_mounts: List[str] = []
-        self.active_lazy: List[str] = []
-        self.active_files: List[str] = []
+        self.active_mounts: list[str] = []
+        self.active_lazy: list[str] = []
+        self.active_files: list[str] = []
 
     def mount(
         self, source: str, target: str, fstype: str | None = None, options: str | None = None, bind: bool = False
@@ -57,11 +58,11 @@ class MountManager:
         cmd.extend([source, target])
 
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
             self.active_mounts.insert(0, target)  # Insert at beginning for reverse order unmount
             logger.debug(f"Mounted {source} at {target}")
         except subprocess.CalledProcessError as e:
-            raise MountError(f"Failed to mount {source} at {target}: {e.stderr}")
+            raise MountError(f"Failed to mount {source} at {target}: {e.stderr}") from None
 
     def mount_lazy(self, source: str, target: str, bind: bool = False) -> None:
         """Mount with lazy unmount tracking."""
@@ -85,7 +86,7 @@ class MountManager:
             self.active_files.insert(0, target)
             logger.debug(f"Created symlink {target} -> {source}")
         except OSError as e:
-            raise MountError(f"Failed to create symlink {target} -> {source}: {e}")
+            raise MountError(f"Failed to create symlink {target} -> {source}: {e}") from None
 
     def unmount_all(self) -> None:
         """Unmount all tracked mounts."""
@@ -129,7 +130,7 @@ class ChrootManager:
     """Manages chroot environments with proper mount setup and cleanup."""
 
     def __init__(
-        self, chroot_dir: str | Path, unshare_mode: bool = False, custom_mounts: List[MountSpec] | None = None
+        self, chroot_dir: str | Path, unshare_mode: bool = False, custom_mounts: list[MountSpec] | None = None
     ):
         """
         Initialize the chroot manager.
@@ -182,13 +183,10 @@ class ChrootManager:
         # Mount efivarfs if available
         efivarfs_dir = sys_dir / "firmware/efi/efivars"
         if efivarfs_dir.exists():
-            try:
+            with contextlib.suppress(MountError):
                 self.mount_manager.mount(
                     "efivarfs", str(efivarfs_dir), fstype="efivarfs", options="nosuid,noexec,nodev"
                 )
-            except MountError:
-                # Ignore if efivarfs mount fails
-                pass
 
         # Mount dev
         self.mount_manager.mount("udev", str(dev_dir), fstype="devtmpfs", options="mode=0755,nosuid")
@@ -297,7 +295,7 @@ class ChrootManager:
 
             except Exception as e:
                 logger.error(f"Failed to setup custom mount {mount_spec}: {e}")
-                raise MountError(f"Failed to setup custom mount: {e}")
+                raise MountError(f"Failed to setup custom mount: {e}") from None
 
     def _setup_resolv_conf(self) -> None:
         """Set up resolv.conf in the chroot."""
@@ -342,7 +340,9 @@ class ChrootManager:
 
                 # Check if chroot_dir is a mountpoint
                 try:
-                    result = subprocess.run(["mountpoint", "-q", str(self.chroot_dir)], capture_output=True)
+                    result = subprocess.run(
+                        ["mountpoint", "-q", str(self.chroot_dir)], check=False, capture_output=True
+                    )
                     if result.returncode != 0:
                         logger.warning(
                             f"{self.chroot_dir} is not a mountpoint. This may have undesirable side effects."
@@ -352,7 +352,7 @@ class ChrootManager:
 
             except Exception as e:
                 self.teardown()
-                raise ChrootError(f"Failed to setup chroot: {e}")
+                raise ChrootError(f"Failed to setup chroot: {e}") from None
 
         self._is_setup = True
 
@@ -362,7 +362,7 @@ class ChrootManager:
             self.mount_manager.unmount_all()
             self._is_setup = False
 
-    def _create_unshare_script(self, command: List[str], userspec: str | None = None) -> str:
+    def _create_unshare_script(self, command: list[str], userspec: str | None = None) -> str:
         """Create a script to run within the unshared namespace."""
         # Check if verbose logging is enabled
         verbose = logger.isEnabledFor(logging.DEBUG)
@@ -502,7 +502,7 @@ class ChrootManager:
 
         return "\n".join(script_lines)
 
-    def execute(self, command: List[str] | None = None, userspec: str | None = None) -> subprocess.CompletedProcess:
+    def execute(self, command: list[str] | None = None, userspec: str | None = None) -> subprocess.CompletedProcess:
         """
         Execute a command in the chroot environment.
 
@@ -547,7 +547,7 @@ class ChrootManager:
                 env = os.environ.copy()
                 env["SHELL"] = "/bin/bash"
 
-                return subprocess.run(unshare_cmd, env=env)
+                return subprocess.run(unshare_cmd, check=False, env=env)
             finally:
                 # Clean up script file
                 try:
@@ -567,7 +567,7 @@ class ChrootManager:
             env = os.environ.copy()
             env["SHELL"] = "/bin/bash"
 
-            return subprocess.run(chroot_cmd, env=env)
+            return subprocess.run(chroot_cmd, check=False, env=env)
 
     def __enter__(self):
         self.setup()
@@ -655,11 +655,11 @@ itself to make it a mountpoint, i.e. 'mount --bind /your/chroot /your/chroot'.
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())
 
 __all__ = [
-    "ChrootManager",
     "ChrootError",
-    "MountManager",
+    "ChrootManager",
     "MountError",
+    "MountManager",
 ]

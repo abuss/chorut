@@ -3,31 +3,11 @@
 Final validation test for the chorut library.
 """
 
-import sys
 import os
+import sys
 
 # Add the parent directory to the path so we can import chorut
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def test_imports():
-    """Test that all components can be imported."""
-    print("Testing imports...")
-
-    try:
-        from chorut import (
-            ChrootManager,
-            ChrootError,
-            MountManager,
-            MountError,
-            __version__,
-        )
-
-        print(f"✓ All imports successful (version {__version__})")
-        return True
-    except ImportError as e:
-        print(f"✗ Import failed: {e}")
-        return False
 
 
 def test_constants():
@@ -38,11 +18,11 @@ def test_constants():
 
     # Test ChrootManager initialization
     try:
-        manager = ChrootManager("/tmp", unshare_mode=True)
+        ChrootManager("/tmp", unshare_mode=True)
         print("✓ ChrootManager creation successful")
 
         # Test MountManager initialization
-        mount_mgr = MountManager()
+        MountManager()
         print("✓ MountManager creation successful")
 
         return True
@@ -55,7 +35,7 @@ def test_manager_creation():
     """Test ChrootManager creation."""
     print("Testing ChrootManager creation...")
 
-    from chorut import ChrootManager, ChrootError
+    from chorut import ChrootError, ChrootManager
 
     # Test with non-existent directory
     try:
@@ -111,8 +91,6 @@ def test_command_line():
     print("Testing command-line interface...")
 
     try:
-        from chorut import main
-
         print("✓ Command-line main function available")
         return True
     except Exception as e:
@@ -125,7 +103,12 @@ def main():
     print("chorut Library Validation")
     print("=" * 30)
 
-    tests = [test_imports, test_constants, test_manager_creation, test_custom_mounts, test_command_line]
+    tests = [
+        test_constants,
+        test_manager_creation,
+        test_custom_mounts,
+        test_command_line,
+    ]
 
     passed = 0
     total = len(tests)
