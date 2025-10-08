@@ -1,8 +1,8 @@
 """
-Python library for arch-chroot functionality.
+Python library for chroot functionality.
 
 This library provides the ability to set up and manage chroot environments
-similar to the arch-chroot tool, using only Python standard library modules.
+using only Python standard library modules.
 """
 
 import contextlib
@@ -583,7 +583,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Python implementation of arch-chroot",
+        description="Python wrapper of chroot",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 If 'command' is unspecified, chorut will launch /bin/bash.
