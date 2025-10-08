@@ -1,0 +1,64 @@
+name: Test and Validate
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+        uv pip install build
+
+    - name: Lint with ruff
+      run: |
+        uv run ruff check .
+        uv run ruff format --check .
+
+    - name: Type check (if mypy config exists)
+      run: |
+        if [ -f pyproject.toml ] && grep -q "mypy" pyproject.toml; then
+          uv pip install mypy
+          uv run mypy .
+        else
+          echo "No mypy configuration found, skipping type check"
+        fi
+
+    - name: Test with pytest
+      run: |
+        uv run pytest tests/ -v --cov=chorut --cov-report=xml
+
+    - name: Test CLI functionality
+      run: |
+        uv run chorut --help
+        uv run python -c "from chorut import ChrootManager, ChrootError; print('Library import successful')"
+
+    - name: Test package build
+      run: |
+        uv run python -m build
+        ls -la dist/
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
