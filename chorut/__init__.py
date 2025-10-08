@@ -598,7 +598,7 @@ itself to make it a mountpoint, i.e. 'mount --bind /your/chroot /your/chroot'.
     )
 
     parser.add_argument("chroot_dir", help="chroot directory")
-    parser.add_argument("command", nargs="*", help="command and arguments to execute")
+    parser.add_argument("command", nargs=argparse.REMAINDER, help="command and arguments to execute")
     parser.add_argument("-N", "--unshare", action="store_true", help="Run in unshare mode as a regular user")
     parser.add_argument(
         "-u", "--userspec", metavar="USER[:GROUP]", help="Specify non-root user and optional group to use"
