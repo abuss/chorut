@@ -7,7 +7,7 @@ name = "chorut"
 version = "0.1.0"
 description = "Python implementation of arch-chroot functionality with minimal dependencies"
 readme = "README.md"
-license = {text = "Public Domain"}
+license = {text = "MIT"}
 authors = [
     {name = "chorut contributors"}
 ]
@@ -17,7 +17,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: Public Domain",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
