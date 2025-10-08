@@ -32,9 +32,10 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.3.0",
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "ruff>=0.1.0"
+    "ruff>=0.1.0",
 ]
 
 [project.urls]
@@ -52,7 +53,7 @@ packages = ["chorut"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/chorut",
-    "/README.md", 
+    "/README.md",
     "/LICENSE",
     "/pyproject.toml"
 ]
