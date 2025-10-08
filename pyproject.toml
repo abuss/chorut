@@ -11,7 +11,7 @@ license = {text = "MIT"}
 authors = [
     {name = "Antal Buss"}
 ]
-keywords = ["chroot", "arch-chroot", "containers", "linux", "namespaces"]
+keywords = ["chroot", "chroot", "containers", "linux", "namespaces"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
