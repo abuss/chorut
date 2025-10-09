@@ -19,3 +19,5 @@ jobs:
       - run: uv build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.12.2
+        with:
+          repository_url: https://test.pypi.org/simple
