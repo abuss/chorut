@@ -3,6 +3,8 @@ on:
   push:
     tags:
       - "v*.*.*"
+  check_run:
+    types: [rerequested, completed]
 
 jobs:
   publish:
