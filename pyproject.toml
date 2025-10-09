@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "chorut"
-version = "0.1.1"
+version = "0.1.0"
 description = "Python implementation of an enhanced chroot functionality with minimal dependencies"
 readme = "README.md"
 license = {text = "MIT"}
