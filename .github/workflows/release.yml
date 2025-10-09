@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v1
-      - run: uv build
+      - run: |
+          uv sync --dev
+          uv pip install build
+          uv build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.12.2
