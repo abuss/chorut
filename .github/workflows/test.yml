@@ -24,10 +24,8 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}
 
-    - name: Install dependencies
-      run: |
-        uv sync --dev
-        uv pip install build
+    - name: Install the project
+      run: uv sync --all-extras
 
     - name: Lint with ruff
       run: |
@@ -37,7 +35,7 @@ jobs:
     - name: Type check (if mypy config exists)
       run: |
         if [ -f pyproject.toml ] && grep -q "mypy" pyproject.toml; then
-          uv pip install mypy
+          uv add --dev mypy
           uv run mypy .
         else
           echo "No mypy configuration found, skipping type check"
@@ -54,6 +52,7 @@ jobs:
 
     - name: Test package build
       run: |
+        uv add --dev build
         uv run python -m build
         ls -la dist/
 
