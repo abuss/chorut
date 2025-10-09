@@ -12,10 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v1
-      - run: |
-          uv sync --dev
-          uv pip install build
-          uv build
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - run: uv build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.12.2
