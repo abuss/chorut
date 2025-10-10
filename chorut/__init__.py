@@ -502,22 +502,45 @@ class ChrootManager:
 
         return "\n".join(script_lines)
 
-    def execute(self, command: list[str] | None = None, userspec: str | None = None) -> subprocess.CompletedProcess:
+    def execute(
+        self, command: list[str] | str | None = None, userspec: str | None = None
+    ) -> subprocess.CompletedProcess:
         """
         Execute a command in the chroot environment.
 
         Args:
-            command: Command to execute (defaults to ['/bin/bash'])
+            command: Command to execute (defaults to ['/bin/bash']). Can be a list of strings or a single string.
+                    Note: String commands are parsed using shlex.split(), which handles quoted arguments
+                    but does NOT interpret shell features like pipes (|), command substitution (`cmd` or $(cmd)),
+                    or logical operators (&&, ||). For shell features, explicitly use:
+                    "bash -c 'your_shell_command_here'"
             userspec: User specification in format 'user' or 'user:group'
 
         Returns:
             CompletedProcess object with the result
+
+        Examples:
+            # Simple commands (both formats work identically):
+            chroot.execute(["echo", "hello"])
+            chroot.execute("echo hello")
+
+            # Commands with quoted arguments:
+            chroot.execute("echo 'hello world'")
+
+            # Shell features require explicit shell invocation:
+            chroot.execute("bash -c 'echo `ls | wc -l`'")  # Command substitution
+            chroot.execute("bash -c 'ls | wc -l'")         # Pipes
+            chroot.execute("bash -c 'echo hello && echo world'")  # Logical operators
         """
         if not self._is_setup:
             raise ChrootError("Chroot environment not set up. Call setup() first.")
 
         if command is None:
             command = ["/bin/bash"]
+        elif isinstance(command, str):
+            import shlex
+
+            command = shlex.split(command)
 
         if self.unshare_mode:
             # For unshare mode, create a script and run it in unshared namespace

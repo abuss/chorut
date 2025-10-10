@@ -47,9 +47,17 @@ def test_library():
         print("Testing setup...")
         chroot.setup()
 
-        print("Testing command execution...")
+        print("Testing command execution with list...")
         result = chroot.execute(["/bin/test.sh"])
         print(f"Command exit code: {result.returncode}")
+
+        print("Testing command execution with string...")
+        result = chroot.execute("/bin/test.sh")
+        print(f"String command exit code: {result.returncode}")
+
+        print("Testing command execution with string and arguments...")
+        result = chroot.execute("echo 'String command test'")
+        print(f"String command with args exit code: {result.returncode}")
 
         print("Testing teardown...")
         chroot.teardown()
@@ -58,6 +66,9 @@ def test_library():
         with ChrootManager(chroot_dir, unshare_mode=True) as cm:
             result = cm.execute(["echo", "Context manager test"])
             print(f"Context manager exit code: {result.returncode}")
+
+            result = cm.execute("echo 'Context manager string test'")
+            print(f"Context manager string exit code: {result.returncode}")
 
         print("All tests completed successfully!")
 
