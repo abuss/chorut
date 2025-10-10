@@ -9,6 +9,8 @@ A Python library that provides chroot functionality inspired by arch-chroot with
 - **Unshare mode**: Support for running as non-root user using Linux namespaces
 - **Context manager**: Clean automatic setup and teardown
 - **resolv.conf handling**: Proper DNS configuration in chroot
+- **String and list commands**: Execute commands using either list format or string format
+- **Output capture**: Capture stdout and stderr from executed commands
 - **Error handling**: Comprehensive error reporting and cleanup
 - **Zero external dependencies**: Uses only Python standard library
 
@@ -28,6 +30,17 @@ from chorut import ChrootManager
 # Basic usage as root
 with ChrootManager('/path/to/chroot') as chroot:
     result = chroot.execute(['ls', '-la'])
+
+# String commands (parsed with shlex.split)
+with ChrootManager('/path/to/chroot') as chroot:
+    result = chroot.execute('ls -la /etc')
+
+# Output capture
+with ChrootManager('/path/to/chroot') as chroot:
+    result = chroot.execute('cat /etc/hostname', capture_output=True)
+    if result.returncode == 0:
+        hostname = result.stdout.strip()
+        print(f"Hostname: {hostname}")
 
 # Non-root usage with unshare mode (requires complete chroot environment)
 with ChrootManager('/path/to/complete/chroot', unshare_mode=True) as chroot:
@@ -59,6 +72,46 @@ custom_mounts = [
 
 with ChrootManager('/path/to/chroot', custom_mounts=custom_mounts) as chroot:
     result = chroot.execute(['df', '-h'])
+```
+
+### String Commands and Shell Features
+
+The `execute` method accepts both list and string commands:
+
+```python
+# List format (recommended for complex commands)
+result = chroot.execute(['ls', '-la', '/etc'])
+
+# String format (parsed with shlex.split)
+result = chroot.execute('ls -la /etc')
+
+# For shell features like pipes, use explicit bash
+result = chroot.execute("bash -c 'ls | wc -l'")
+
+# Command substitution requires bash
+result = chroot.execute("bash -c 'echo `date`'")
+```
+
+**Note**: String commands are parsed literally using `shlex.split()`. Shell features (pipes, redirects, command substitution) require explicit shell invocation with `bash -c`.
+
+### Output Capture
+
+Capture command output using the `capture_output` parameter:
+
+```python
+# Capture both stdout and stderr
+result = chroot.execute('cat /etc/hostname', capture_output=True)
+if result.returncode == 0:
+    hostname = result.stdout.strip()
+
+# Capture with error handling
+result = chroot.execute('ls /nonexistent', capture_output=True)
+if result.returncode != 0:
+    error_msg = result.stderr.strip()
+
+# Get raw bytes instead of text
+result = chroot.execute('cat binary_file', capture_output=True, text=False)
+binary_data = result.stdout
 ```
 
 ### Custom Mounts
@@ -176,7 +229,45 @@ ChrootManager(chroot_dir, unshare_mode=False, custom_mounts=None)
 
 - `setup()`: Set up the chroot environment
 - `teardown()`: Clean up the chroot environment
-- `execute(command=None, userspec=None)`: Execute a command in the chroot
+- `execute(command=None, userspec=None, capture_output=False, text=True)`: Execute a command in the chroot
+
+##### execute() Parameters
+
+- `command`: Command to execute. Can be:
+  - `list[str]`: List of command and arguments (e.g., `['ls', '-la']`)
+  - `str`: String command parsed with `shlex.split()` (e.g., `'ls -la'`)
+  - `None`: Start interactive shell
+- `userspec`: User specification in format "user" or "user:group"
+- `capture_output`: If `True`, capture stdout and stderr (default: `False`)
+- `text`: If `True`, decode output as text; if `False`, return bytes (default: `True`)
+
+##### execute() Return Value
+
+Returns a `subprocess.CompletedProcess` object with:
+- `returncode`: Exit code of the command
+- `stdout`: Command output (if `capture_output=True`)
+- `stderr`: Command error output (if `capture_output=True`)
+
+##### execute() Examples
+
+```python
+# List command
+result = chroot.execute(['ls', '-la'])
+
+# String command
+result = chroot.execute('ls -la')
+
+# With output capture
+result = chroot.execute('cat /etc/hostname', capture_output=True)
+hostname = result.stdout.strip()
+
+# Shell features require explicit bash
+result = chroot.execute("bash -c 'ls | wc -l'", capture_output=True)
+line_count = int(result.stdout.strip())
+
+# Interactive shell (command=None)
+chroot.execute()  # Starts bash shell
+```
 
 ### Exceptions
 

@@ -59,6 +59,12 @@ def test_library():
         result = chroot.execute("echo 'String command test'")
         print(f"String command with args exit code: {result.returncode}")
 
+        print("Testing output capture...")
+        result = chroot.execute("echo 'Captured output test'", capture_output=True)
+        print(f"Capture command exit code: {result.returncode}")
+        print(f"Captured stdout: {result.stdout}")
+        print(f"Captured stderr: {result.stderr}")
+
         print("Testing teardown...")
         chroot.teardown()
 
@@ -69,6 +75,11 @@ def test_library():
 
             result = cm.execute("echo 'Context manager string test'")
             print(f"Context manager string exit code: {result.returncode}")
+
+            result = cm.execute("echo 'Context manager capture test'", capture_output=True)
+            print(f"Context manager capture exit code: {result.returncode}")
+            print(f"Context manager captured stdout: {result.stdout}")
+            print(f"Context manager captured stderr: {result.stderr}")
 
         print("All tests completed successfully!")
 

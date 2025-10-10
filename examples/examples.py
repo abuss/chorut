@@ -26,6 +26,12 @@ def example_basic_usage():
             result = chroot.execute("echo 'Hello from chroot with string!'")
             print(f"String command exit code: {result.returncode}")
 
+            # Execute a command and capture its output
+            result = chroot.execute("echo 'Captured output!'", capture_output=True)
+            print(f"Capture command exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Captured output: {result.stdout.strip()}")
+
             # Execute an interactive bash session (if running interactively)
             # result = chroot.execute()  # defaults to /bin/bash
 
@@ -55,6 +61,13 @@ def example_manual_setup():
 
         result = chroot.execute("whoami")
         print(f"String command exit code: {result.returncode}")
+
+        result = chroot.execute("whoami", capture_output=True)
+        print(f"Capture command exit code: {result.returncode}")
+        if result.stdout:
+            print(f"Captured user: {result.stdout.strip()}")
+        if result.stderr:
+            print(f"Captured error: {result.stderr.strip()}")
 
     except ChrootError as e:
         print(f"Error: {e}")
@@ -97,14 +110,62 @@ def example_shell_features():
             # result = chroot.execute("echo `ls | wc -l`")
 
             # This WILL work (explicit shell):
-            result = chroot.execute("bash -c 'echo `ls /tmp | wc -l`'")
+            result = chroot.execute("bash -c 'echo `ls /tmp | wc -l`'", capture_output=True)
             print(f"Command substitution exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Command substitution output: {result.stdout.strip()}")
 
-            result = chroot.execute("bash -c 'ls /tmp | wc -l'")
+            result = chroot.execute("bash -c 'ls /tmp | wc -l'", capture_output=True)
             print(f"Pipe command exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Pipe output: {result.stdout.strip()}")
 
-            result = chroot.execute("bash -c 'echo hello && echo world'")
+            result = chroot.execute("bash -c 'echo hello && echo world'", capture_output=True)
             print(f"Logical operator exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Logical operator output: {result.stdout.strip()}")
+
+    except ChrootError as e:
+        print(f"Error: {e}")
+    except FileNotFoundError:
+        print(f"Chroot directory not found: {chroot_path}")
+        print("Please create a chroot directory or update the path")
+
+
+def example_output_capture():
+    """Example of capturing command output."""
+    print("\n=== Output Capture Example ===")
+
+    chroot_path = "/tmp/my_chroot"
+
+    try:
+        with ChrootManager(chroot_path, unshare_mode=True) as chroot:
+            # Execute command without capturing output (goes to terminal)
+            print("Command without capture:")
+            result = chroot.execute("echo 'This goes to terminal'")
+            print(f"Exit code: {result.returncode}")
+            print(f"Stdout available: {result.stdout is not None}")
+
+            print("\nCommand with capture:")
+            # Execute command with output capture
+            result = chroot.execute("echo 'This is captured'", capture_output=True)
+            print(f"Exit code: {result.returncode}")
+            print(f"Captured stdout: '{result.stdout.strip() if result.stdout else ''}'")
+            print(f"Captured stderr: '{result.stderr.strip() if result.stderr else ''}'")
+
+            print("\nShell command with capture:")
+            # Capture output from shell commands
+            result = chroot.execute("bash -c 'echo hello; echo world'", capture_output=True)
+            print(f"Exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Multi-line output: {result.stdout!r}")
+
+            print("\nCommand with stderr:")
+            # Capture stderr
+            result = chroot.execute("bash -c 'echo stdout; echo stderr >&2; exit 0'", capture_output=True)
+            print(f"Exit code: {result.returncode}")
+            print(f"Stdout: '{result.stdout.strip() if result.stdout else ''}'")
+            print(f"Stderr: '{result.stderr.strip() if result.stderr else ''}'")
 
     except ChrootError as e:
         print(f"Error: {e}")
@@ -151,6 +212,7 @@ if __name__ == "__main__":
     example_manual_setup()
     example_custom_mounts()
     example_shell_features()
+    example_output_capture()
 
     # Only try root mode if running as root
     if sys.platform == "linux":

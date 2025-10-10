@@ -503,7 +503,11 @@ class ChrootManager:
         return "\n".join(script_lines)
 
     def execute(
-        self, command: list[str] | str | None = None, userspec: str | None = None
+        self,
+        command: list[str] | str | None = None,
+        userspec: str | None = None,
+        capture_output: bool = False,
+        text: bool = True,
     ) -> subprocess.CompletedProcess:
         """
         Execute a command in the chroot environment.
@@ -515,22 +519,30 @@ class ChrootManager:
                     or logical operators (&&, ||). For shell features, explicitly use:
                     "bash -c 'your_shell_command_here'"
             userspec: User specification in format 'user' or 'user:group'
+            capture_output: If True, capture stdout and stderr. If False, output goes to the terminal (default: False)
+            text: If True, decode output as text. If False, return bytes (default: True)
 
         Returns:
-            CompletedProcess object with the result
+            CompletedProcess object with the result. When capture_output=True, the stdout and stderr
+            attributes will contain the captured output.
 
         Examples:
             # Simple commands (both formats work identically):
-            chroot.execute(["echo", "hello"])
-            chroot.execute("echo hello")
+            result = chroot.execute(["echo", "hello"])
+            result = chroot.execute("echo hello")
+
+            # Capture output:
+            result = chroot.execute("echo hello", capture_output=True)
+            print(f"Output: {result.stdout}")
+            print(f"Errors: {result.stderr}")
 
             # Commands with quoted arguments:
-            chroot.execute("echo 'hello world'")
+            result = chroot.execute("echo 'hello world'", capture_output=True)
 
             # Shell features require explicit shell invocation:
-            chroot.execute("bash -c 'echo `ls | wc -l`'")  # Command substitution
-            chroot.execute("bash -c 'ls | wc -l'")         # Pipes
-            chroot.execute("bash -c 'echo hello && echo world'")  # Logical operators
+            result = chroot.execute("bash -c 'echo `ls | wc -l`'", capture_output=True)  # Command substitution
+            result = chroot.execute("bash -c 'ls | wc -l'", capture_output=True)         # Pipes
+            result = chroot.execute("bash -c 'echo hello && echo world'", capture_output=True)  # Logical operators
         """
         if not self._is_setup:
             raise ChrootError("Chroot environment not set up. Call setup() first.")
@@ -570,7 +582,7 @@ class ChrootManager:
                 env = os.environ.copy()
                 env["SHELL"] = "/bin/bash"
 
-                return subprocess.run(unshare_cmd, check=False, env=env)
+                return subprocess.run(unshare_cmd, check=False, env=env, capture_output=capture_output, text=text)
             finally:
                 # Clean up script file
                 try:
@@ -590,7 +602,7 @@ class ChrootManager:
             env = os.environ.copy()
             env["SHELL"] = "/bin/bash"
 
-            return subprocess.run(chroot_cmd, check=False, env=env)
+            return subprocess.run(chroot_cmd, check=False, env=env, capture_output=capture_output, text=text)
 
     def __enter__(self):
         self.setup()
