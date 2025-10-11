@@ -105,25 +105,54 @@ def example_shell_features():
             result = chroot.execute("echo 'Hello World'")
             print(f"Simple string command exit code: {result.returncode}")
 
-            # Shell features require explicit bash invocation
-            # This will NOT work (backticks are treated as literal):
-            # result = chroot.execute("echo `ls | wc -l`")
+            # Shell features now work automatically with auto_shell=True (default)
+            print("\n--- Auto-detected shell features ---")
 
-            # This WILL work (explicit shell):
-            result = chroot.execute("bash -c 'echo `ls /tmp | wc -l`'", capture_output=True)
-            print(f"Command substitution exit code: {result.returncode}")
-            if result.stdout:
-                print(f"Command substitution output: {result.stdout.strip()}")
-
-            result = chroot.execute("bash -c 'ls /tmp | wc -l'", capture_output=True)
+            # Pipes - now works automatically
+            result = chroot.execute("ls /tmp | wc -l", capture_output=True)
             print(f"Pipe command exit code: {result.returncode}")
             if result.stdout:
                 print(f"Pipe output: {result.stdout.strip()}")
 
-            result = chroot.execute("bash -c 'echo hello && echo world'", capture_output=True)
+            # Logical operators - now works automatically
+            result = chroot.execute("echo hello && echo world", capture_output=True)
             print(f"Logical operator exit code: {result.returncode}")
             if result.stdout:
                 print(f"Logical operator output: {result.stdout.strip()}")
+
+            # Command substitution - now works automatically
+            result = chroot.execute("echo `ls /tmp | wc -l`", capture_output=True)
+            print(f"Command substitution exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Command substitution output: {result.stdout.strip()}")
+
+            # Glob patterns - now works automatically
+            result = chroot.execute("ls /tmp/*.* 2>/dev/null || echo 'no files'", capture_output=True)
+            print(f"Glob pattern exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Glob pattern output: {result.stdout.strip()}")
+
+            print("\n--- Manual shell invocation (still works) ---")
+            # Manual shell invocation still works for complex cases
+            result = chroot.execute("bash -c 'echo manually invoked shell'", capture_output=True)
+            print(f"Manual bash -c exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Manual bash -c output: {result.stdout.strip()}")
+
+        print("\n--- With auto_shell=False ---")
+        # Demonstrate auto_shell=False behavior
+        with ChrootManager(chroot_path, unshare_mode=True, auto_shell=False) as chroot_manual:
+            # This will NOT work without explicit bash -c when auto_shell=False
+            result = chroot_manual.execute("echo 'simple command works'", capture_output=True)
+            print(f"Simple command with auto_shell=False exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Simple command output: {result.stdout.strip()}")
+
+            # Shell features require explicit bash -c when auto_shell=False
+            result = chroot_manual.execute("bash -c 'echo hello && echo world'", capture_output=True)
+            print(f"Explicit bash -c with auto_shell=False exit code: {result.returncode}")
+            if result.stdout:
+                print(f"Explicit bash -c output: {result.stdout.strip()}")
 
     except ChrootError as e:
         print(f"Error: {e}")
