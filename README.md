@@ -82,17 +82,25 @@ The `execute` method accepts both list and string commands:
 # List format (recommended for complex commands)
 result = chroot.execute(['ls', '-la', '/etc'])
 
-# String format (parsed with shlex.split)
+# String format (parsed with shlex.split or auto-wrapped with bash -c)
 result = chroot.execute('ls -la /etc')
 
-# For shell features like pipes, use explicit bash
+# Shell features now work automatically (auto_shell=True by default)
+result = chroot.execute('ls | wc -l')           # Pipes
+result = chroot.execute('echo hello && echo world')  # Logical operators
+result = chroot.execute('echo `date`')          # Command substitution
+result = chroot.execute('ls *.txt')             # Glob patterns
+result = chroot.execute('echo $HOME')           # Variable expansion
+
+# Manual shell invocation still works
 result = chroot.execute("bash -c 'ls | wc -l'")
 
-# Command substitution requires bash
-result = chroot.execute("bash -c 'echo `date`'")
+# Disable auto-detection by setting auto_shell=False
+chroot_manual = ChrootManager('/path/to/chroot', auto_shell=False)
+result = chroot_manual.execute("bash -c 'ls | wc -l'")  # Explicit bash -c needed
 ```
 
-**Note**: String commands are parsed literally using `shlex.split()`. Shell features (pipes, redirects, command substitution) require explicit shell invocation with `bash -c`.
+**Auto-Detection**: By default (`auto_shell=True`), string commands are automatically analyzed for shell metacharacters (pipes `|`, logical operators `&&`/`||`, redirects `<>`/`>`, command substitution `` `cmd` ``/`$(cmd)`, glob patterns `*`/`?`, variable expansion `$VAR`, etc.). When detected, the command is automatically wrapped with `bash -c`. Simple commands are still parsed with `shlex.split()` for security.
 
 ### Output Capture
 
@@ -218,12 +226,13 @@ The main class for managing chroot environments.
 #### Constructor
 
 ```python
-ChrootManager(chroot_dir, unshare_mode=False, custom_mounts=None)
+ChrootManager(chroot_dir, unshare_mode=False, custom_mounts=None, auto_shell=True)
 ```
 
 - `chroot_dir`: Path to the chroot directory
 - `unshare_mode`: Whether to use unshare mode for non-root operation
 - `custom_mounts`: Optional list of custom mount specifications
+- `auto_shell`: Whether to automatically detect shell features in string commands and wrap them with 'bash -c' (default: True)
 
 #### Methods
 

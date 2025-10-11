@@ -130,7 +130,11 @@ class ChrootManager:
     """Manages chroot environments with proper mount setup and cleanup."""
 
     def __init__(
-        self, chroot_dir: str | Path, unshare_mode: bool = False, custom_mounts: list[MountSpec] | None = None
+        self,
+        chroot_dir: str | Path,
+        unshare_mode: bool = False,
+        custom_mounts: list[MountSpec] | None = None,
+        auto_shell: bool = True,
     ):
         """
         Initialize the chroot manager.
@@ -146,10 +150,13 @@ class ChrootManager:
                 - options: Mount options (optional)
                 - bind: Whether this is a bind mount (optional, defaults to False)
                 - mkdir: Whether to create target directory (optional, defaults to True)
+            auto_shell: Whether to automatically detect shell features in string commands
+                and wrap them with 'bash -c' (default: True)
         """
         self.chroot_dir = Path(chroot_dir).resolve()
         self.unshare_mode = unshare_mode
         self.custom_mounts = custom_mounts or []
+        self.auto_shell = auto_shell
         self.mount_manager = MountManager()
         self._is_setup = False
 
@@ -264,6 +271,40 @@ class ChrootManager:
                 target = root + target.lstrip("/")
 
         return target
+
+    def _needs_shell(self, command_str: str) -> bool:
+        """
+        Detect if a command string contains shell metacharacters that require bash -c wrapping.
+
+        Returns True if the command contains shell features like pipes, redirects,
+        command substitution, logical operators, etc.
+        """
+        import re
+
+        # Shell metacharacters that require shell interpretation
+        shell_patterns = [
+            r"\|",  # Pipes: cmd1 | cmd2
+            r"&&",  # Logical AND: cmd1 && cmd2
+            r"\|\|",  # Logical OR: cmd1 || cmd2
+            r"[;&]",  # Command separators: cmd1; cmd2 or cmd1 & cmd2
+            r"[<>]",  # Redirects: cmd > file, cmd < file
+            r"`[^`]*`",  # Command substitution: `cmd`
+            r"\$\([^)]*\)",  # Command substitution: $(cmd)
+            r"\*",  # Glob patterns: *.txt
+            r"\?",  # Glob patterns: file?.txt
+            r"~",  # Home directory expansion
+            r"\$\w+",  # Variable expansion: $VAR
+            r"\{[^}]*\}",  # Brace expansion: {a,b,c}
+        ]
+
+        # Skip detection if already wrapped with bash -c
+        if command_str.strip().startswith(("bash -c", "sh -c")):
+            return False
+
+        # Check for any shell metacharacters outside of quotes
+        # This is a simplified approach - a more robust version would need
+        # proper quote-aware parsing
+        return any(re.search(pattern, command_str) for pattern in shell_patterns)
 
     def _setup_custom_mounts(self) -> None:
         """Set up user-defined custom mounts."""
@@ -514,10 +555,11 @@ class ChrootManager:
 
         Args:
             command: Command to execute (defaults to ['/bin/bash']). Can be a list of strings or a single string.
-                    Note: String commands are parsed using shlex.split(), which handles quoted arguments
-                    but does NOT interpret shell features like pipes (|), command substitution (`cmd` or $(cmd)),
-                    or logical operators (&&, ||). For shell features, explicitly use:
-                    "bash -c 'your_shell_command_here'"
+                    When auto_shell=True (default), string commands containing shell metacharacters
+                    (pipes |, logical operators &&/||, redirects <>, command substitution `cmd`/$(cmd),
+                    glob patterns *, variable expansion $VAR, etc.) are automatically wrapped with 'bash -c'.
+                    Simple commands are parsed with shlex.split().
+                    Set auto_shell=False during initialization to disable this behavior and require explicit 'bash -c' wrapping.
             userspec: User specification in format 'user' or 'user:group'
             capture_output: If True, capture stdout and stderr. If False, output goes to the terminal (default: False)
             text: If True, decode output as text. If False, return bytes (default: True)
@@ -539,10 +581,18 @@ class ChrootManager:
             # Commands with quoted arguments:
             result = chroot.execute("echo 'hello world'", capture_output=True)
 
-            # Shell features require explicit shell invocation:
-            result = chroot.execute("bash -c 'echo `ls | wc -l`'", capture_output=True)  # Command substitution
-            result = chroot.execute("bash -c 'ls | wc -l'", capture_output=True)         # Pipes
-            result = chroot.execute("bash -c 'echo hello && echo world'", capture_output=True)  # Logical operators
+            # Shell features now work automatically (when auto_shell=True):
+            result = chroot.execute("ls | wc -l", capture_output=True)                    # Pipes
+            result = chroot.execute("echo hello && echo world", capture_output=True)     # Logical operators
+            result = chroot.execute("echo `date`", capture_output=True)                  # Command substitution
+            result = chroot.execute("ls *.txt", capture_output=True)                     # Glob patterns
+
+            # Manual shell invocation still works:
+            result = chroot.execute("bash -c 'echo hello && echo world'", capture_output=True)
+
+            # Disable auto-detection by setting auto_shell=False during initialization:
+            chroot_manual = ChrootManager('/path', auto_shell=False)
+            result = chroot_manual.execute("bash -c 'ls | wc -l'")  # Explicit bash -c needed
         """
         if not self._is_setup:
             raise ChrootError("Chroot environment not set up. Call setup() first.")
@@ -552,7 +602,12 @@ class ChrootManager:
         elif isinstance(command, str):
             import shlex
 
-            command = shlex.split(command)
+            # Auto-detect shell features and wrap with bash -c if needed
+            if self.auto_shell and self._needs_shell(command):
+                logger.debug(f"Auto-detected shell features in command: {command}")
+                command = ["bash", "-c", command]
+            else:
+                command = shlex.split(command)
 
         if self.unshare_mode:
             # For unshare mode, create a script and run it in unshared namespace
