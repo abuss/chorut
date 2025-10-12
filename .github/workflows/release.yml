@@ -22,4 +22,4 @@ jobs:
           version: "latest"
       - run: uv build
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.12.0
+        uses: pypa/gh-action-pypi-publish@v1.13.0
