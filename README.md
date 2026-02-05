@@ -328,4 +328,4 @@ For example, trying to chroot into `/tmp` will fail because it lacks the necessa
 
 ## License
 
-This project is in the public domain.
+Licensed under the MIT License.
