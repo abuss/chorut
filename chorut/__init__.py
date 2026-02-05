@@ -92,31 +92,27 @@ class MountManager:
 
     def unmount_all(self) -> None:
         """Unmount all tracked mounts."""
-        # Unmount regular mounts
         for mount_point in self.active_mounts:
             try:
                 subprocess.run(["umount", mount_point], check=True, capture_output=True)
                 logger.debug(f"Unmounted {mount_point}")
             except subprocess.CalledProcessError as e:
-                logger.warning(f"Failed to unmount {mount_point}: {e.stderr}")
+                raise MountError(f"Failed to unmount {mount_point}: {e.stderr}") from None
 
-        # Lazy unmount
         for mount_point in self.active_lazy:
             try:
                 subprocess.run(["umount", "--lazy", mount_point], check=True, capture_output=True)
                 logger.debug(f"Lazy unmounted {mount_point}")
             except subprocess.CalledProcessError as e:
-                logger.warning(f"Failed to lazy unmount {mount_point}: {e.stderr}")
+                raise MountError(f"Failed to lazy unmount {mount_point}: {e.stderr}") from None
 
-        # Remove created files/symlinks
         for file_path in self.active_files:
             try:
                 os.unlink(file_path)
                 logger.debug(f"Removed {file_path}")
             except OSError as e:
-                logger.warning(f"Failed to remove {file_path}: {e}")
+                raise MountError(f"Failed to remove {file_path}: {e}") from None
 
-        # Clear tracking lists
         self.active_mounts.clear()
         self.active_lazy.clear()
         self.active_files.clear()
@@ -273,6 +269,10 @@ class ChrootManager:
                 target = root + target.lstrip("/")
 
         return target
+
+    def _validate_userspec(self, userspec: str) -> None:
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_-]*(:[a-zA-Z_][a-zA-Z0-9_-]*)?$", userspec):
+            raise ChrootError(f"Invalid userspec format: {userspec}. Expected 'user' or 'user:group'")
 
     def _needs_shell(self, command_str: str) -> bool:
         """
@@ -474,8 +474,12 @@ class ChrootManager:
         )
 
         for device in ["full", "null", "random", "tty", "urandom", "zero"]:
-            script_lines.append(f"touch dev/{device}")
-            script_lines.append(f"mount --bind /dev/{device} dev/{device}")
+            script_lines.append(f"if [ -e /dev/{device} ]; then")
+            script_lines.append(f"    touch dev/{device}")
+            script_lines.append(f"    mount --bind /dev/{device} dev/{device}")
+            script_lines.append("else")
+            script_lines.append(f"    echo 'Warning: /dev/{device} not found, skipping'")
+            script_lines.append("fi")
 
         script_lines.extend(
             [
@@ -600,7 +604,8 @@ class ChrootManager:
         if command is None:
             command = ["/bin/bash"]
         elif isinstance(command, str):
-            # Auto-detect shell features and wrap with bash -c if needed
+            if not command.strip():
+                raise ChrootError("Command string cannot be empty")
             if self.auto_shell and self._needs_shell(command):
                 logger.debug(f"Auto-detected shell features in command: {command}")
                 command = ["bash", "-c", command]
@@ -612,6 +617,9 @@ class ChrootManager:
                 raise ChrootError("All command arguments must be strings")
             if len(command) == 0:
                 raise ChrootError("Command list cannot be empty")
+
+        if userspec:
+            self._validate_userspec(userspec)
 
         if self.unshare_mode:
             # For unshare mode, create a script and run it in unshared namespace

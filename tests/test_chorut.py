@@ -3,9 +3,12 @@
 Test script for chorut library with comprehensive list-based command tests.
 """
 
+import contextlib
 import shutil
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from chorut import ChrootError, ChrootManager
 
@@ -364,6 +367,87 @@ def test_original_functionality():
         shutil.rmtree(chroot_dir)
 
 
+def test_empty_string_validation():
+    """Test that empty string commands raise appropriate error."""
+    print("\n" + "=" * 60)
+    print("Testing Empty String Validation")
+    print("=" * 60)
+
+    chroot_dir = create_minimal_chroot()
+
+    try:
+        with contextlib.suppress(ChrootError), ChrootManager(chroot_dir, unshare_mode=True) as chroot:
+            chroot.execute("")
+        print("   PASS: Empty string raises ChrootError")
+        print("=" * 60)
+        return True
+
+    except Exception as e:
+        print(f"\nERROR: {type(e).__name__}: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+    finally:
+        shutil.rmtree(chroot_dir)
+
+
+def test_whitespace_only_string_validation():
+    """Test that whitespace-only string commands raise appropriate error."""
+    print("\n" + "=" * 60)
+    print("Testing Whitespace-Only String Validation")
+    print("=" * 60)
+
+    chroot_dir = create_minimal_chroot()
+
+    try:
+        with contextlib.suppress(ChrootError), ChrootManager(chroot_dir, unshare_mode=True) as chroot:
+            chroot.execute("   ")
+        print("   PASS: Whitespace-only string raises ChrootError")
+        print("=" * 60)
+        return True
+
+    except Exception as e:
+        print(f"\nERROR: {type(e).__name__}: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+    finally:
+        shutil.rmtree(chroot_dir)
+
+
+def test_invalid_userspec_validation():
+    """Test that invalid userspec formats raise appropriate error."""
+    print("\n" + "=" * 60)
+    print("Testing Invalid Userspec Validation")
+    print("=" * 60)
+
+    chroot_dir = create_minimal_chroot()
+
+    try:
+        chroot = ChrootManager(chroot_dir, unshare_mode=True)
+        chroot.setup()
+
+        with pytest.raises(ChrootError, match="Invalid userspec format"):
+            chroot.execute(["echo", "test"], userspec="user:group:extra")
+
+        chroot.teardown()
+
+        print("   PASS: Invalid userspec raises ChrootError")
+        print("=" * 60)
+        return True
+
+    except Exception as e:
+        print(f"\nERROR: {type(e).__name__}: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+    finally:
+        shutil.rmtree(chroot_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     all_passed = True
 
@@ -372,6 +456,9 @@ if __name__ == "__main__":
     all_passed &= test_string_commands()
     all_passed &= test_pipes_and_shell_features()
     all_passed &= test_context_manager()
+    all_passed &= test_empty_string_validation()
+    all_passed &= test_whitespace_only_string_validation()
+    all_passed &= test_invalid_userspec_validation()
 
     print("\n" + "=" * 60)
     if all_passed:
