@@ -260,7 +260,7 @@ Returns a `subprocess.CompletedProcess` object with:
 ##### execute() Examples
 
 ```python
-# List command
+# List command (recommended for security)
 result = chroot.execute(['ls', '-la'])
 
 # String command
@@ -270,17 +270,40 @@ result = chroot.execute('ls -la')
 result = chroot.execute('cat /etc/hostname', capture_output=True)
 hostname = result.stdout.strip()
 
-# Shell features require explicit bash
-result = chroot.execute("bash -c 'ls | wc -l'", capture_output=True)
-line_count = int(result.stdout.strip())
+# Shell features work automatically with auto_shell=True (default)
+result = chroot.execute('ls | wc -l', capture_output=True)  # Pipes work!
+result = chroot.execute('echo hello && echo world')  # Logical operators
+result = chroot.execute('ls *.txt')  # Glob patterns
+
+# List commands with special characters are handled safely
+result = chroot.execute(['echo', 'hello world', 'foo;bar'])
 
 # Interactive shell (command=None)
 chroot.execute()  # Starts bash shell
 ```
 
+### Command List Validation
+
+When using list-based commands, all arguments are validated:
+
+```python
+# Valid - all arguments are strings
+result = chroot.execute(['echo', 'hello', 'world'])
+
+# Raises ChrootError - non-string arguments
+result = chroot.execute(['echo', 123])  # Error: All command arguments must be strings
+
+# Raises ChrootError - empty list
+result = chroot.execute([])  # Error: Command list cannot be empty
+```
+
+### Security
+
+All user-provided values (mount sources, targets, command arguments) are properly escaped using `shlex.quote()` to prevent command injection attacks. List-based commands are recommended over string commands when handling untrusted input.
+
 ### Exceptions
 
-- `ChrootError`: Raised for chroot-related errors
+- `ChrootError`: Raised for chroot-related errors, invalid command arguments, or empty command lists
 - `MountError`: Raised for mount-related errors
 
 ## Requirements

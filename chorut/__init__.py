@@ -600,14 +600,18 @@ class ChrootManager:
         if command is None:
             command = ["/bin/bash"]
         elif isinstance(command, str):
-            import shlex
-
             # Auto-detect shell features and wrap with bash -c if needed
             if self.auto_shell and self._needs_shell(command):
                 logger.debug(f"Auto-detected shell features in command: {command}")
                 command = ["bash", "-c", command]
             else:
                 command = shlex.split(command)
+        elif isinstance(command, list):
+            # Validate that all elements in the list are strings
+            if not all(isinstance(arg, str) for arg in command):
+                raise ChrootError("All command arguments must be strings")
+            if len(command) == 0:
+                raise ChrootError("Command list cannot be empty")
 
         if self.unshare_mode:
             # For unshare mode, create a script and run it in unshared namespace
