@@ -8,6 +8,8 @@ using only Python standard library modules.
 import contextlib
 import logging
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -279,8 +281,6 @@ class ChrootManager:
         Returns True if the command contains shell features like pipes, redirects,
         command substitution, logical operators, etc.
         """
-        import re
-
         # Shell metacharacters that require shell interpretation
         shell_patterns = [
             r"\|",  # Pipes: cmd1 | cmd2
@@ -505,10 +505,10 @@ class ChrootManager:
             mkdir = mount_spec.get("mkdir", True)
 
             if verbose:
-                script_lines.append(f"echo 'Mounting {source} -> {target_rel}'")
+                script_lines.append(f"echo 'Mounting {shlex.quote(source)} -> {shlex.quote(target_rel)}'")
 
             if mkdir:
-                script_lines.append(f"mkdir -p '{target_rel}'")
+                script_lines.append(f"mkdir -p {shlex.quote(target_rel)}")
 
             mount_cmd = ["mount"]
             if bind:
@@ -517,9 +517,9 @@ class ChrootManager:
                 mount_cmd.extend(["-t", fstype])
 
             if options:
-                mount_cmd.extend(["-o", options])
+                mount_cmd.extend(["-o", shlex.quote(options)])
 
-            mount_cmd.extend([f"'{source}'", f"'{target_rel}'"])
+            mount_cmd.extend([shlex.quote(source), shlex.quote(target_rel)])
             script_lines.append(" ".join(mount_cmd))
 
         script_lines.extend(
@@ -535,9 +535,9 @@ class ChrootManager:
 
         chroot_cmd = ["chroot"]
         if userspec:
-            chroot_cmd.extend(["--userspec", userspec])
+            chroot_cmd.extend(["--userspec", shlex.quote(userspec)])
         chroot_cmd.append(".")
-        chroot_cmd.extend(f"'{arg}'" for arg in command)
+        chroot_cmd.extend(shlex.quote(arg) for arg in command)
 
         script_lines.append(" ".join(chroot_cmd))
 
@@ -617,18 +617,18 @@ class ChrootManager:
             # Write script to a temporary file
             import tempfile
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-                f.write(script_content)
-                script_path = f.name
+            fd, script_path = tempfile.mkstemp(suffix=".sh", text=True)
+            try:
+                os.write(fd, script_content.encode())
+            finally:
+                os.close(fd)
+            os.chmod(script_path, 0o700)
 
             logger.debug("Unshare script written to: %s", script_path)
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("Script content:\n%s", script_content)
 
             try:
-                # Make script executable
-                os.chmod(script_path, 0o755)
-
                 # Run the script in unshared namespace
                 unshare_cmd = ["unshare", "--fork", "--pid", "--mount", "--map-auto", "--map-root-user", script_path]
 
