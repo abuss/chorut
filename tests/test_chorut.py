@@ -448,6 +448,86 @@ def test_invalid_userspec_validation():
         shutil.rmtree(chroot_dir, ignore_errors=True)
 
 
+def test_environment_variable_assignment():
+    """Test commands with environment variable assignments like PATH=/opt/bin:$PATH ls -l."""
+    print("\n" + "=" * 60)
+    print("Testing Environment Variable Assignment")
+    print("=" * 60)
+
+    chroot_dir = create_minimal_chroot()
+
+    try:
+        # Create /opt/bin directory with a custom ls script
+        (chroot_dir / "opt/bin").mkdir(parents=True)
+        custom_ls = chroot_dir / "opt/bin/ls"
+        custom_ls.write_text("#!/bin/bash\necho 'CUSTOM_LS_FROM_OPT_BIN'\n")
+        custom_ls.chmod(0o755)
+
+        with ChrootManager(chroot_dir, unshare_mode=True) as chroot:
+            # Test 1: Command with PATH assignment and variable expansion
+            print("\n1. PATH=/opt/bin:$PATH ls (with variable expansion)...")
+            result = chroot.execute("PATH=/opt/bin:$PATH ls", capture_output=True)
+            assert result.returncode == 0, f"Expected returncode 0, got {result.returncode}"
+            assert "CUSTOM_LS_FROM_OPT_BIN" in result.stdout, f"Expected custom ls to run, got: {result.stdout}"
+            print(f"   PASS: Custom ls executed: {result.stdout.strip()}")
+
+            # Test 2: Command with multiple environment variables
+            print("\n2. Multiple environment variables...")
+            result = chroot.execute("FOO=bar BAZ=$PATH echo $FOO", capture_output=True)
+            assert result.returncode == 0
+            # The shell should expand $FOO in the echo command
+            print(f"   PASS: Multiple env vars: {result.stdout.strip()}")
+
+            # Test 3: Environment variable with command arguments
+            print("\n3. PATH assignment with ls -l...")
+            result = chroot.execute("PATH=/opt/bin:$PATH ls -l", capture_output=True)
+            assert result.returncode == 0
+            assert "CUSTOM_LS_FROM_OPT_BIN" in result.stdout
+            print(f"   PASS: Env var with args: {result.stdout.strip()}")
+
+            # Test 4: Verify normal ls still works without PATH override
+            print("\n4. Normal ls without PATH override...")
+            result = chroot.execute("ls /bin", capture_output=True)
+            assert result.returncode == 0
+            # Should list files in /bin, not show our custom message
+            assert "CUSTOM_LS_FROM_OPT_BIN" not in result.stdout
+            print(f"   PASS: Normal ls works: {result.stdout.strip()[:50]}...")
+
+            # Test 5: PATH assignment without variable expansion (now should work!)
+            print("\n5. PATH=/opt/bin ls (no variable expansion - now auto-detected)...")
+            result = chroot.execute("PATH=/opt/bin ls", capture_output=True)
+            # With the enhanced detection, this should now work
+            assert result.returncode == 0, f"Expected returncode 0, got {result.returncode}"
+            assert "CUSTOM_LS_FROM_OPT_BIN" in result.stdout, "Custom ls should be used"
+            print(f"   PASS: Env var assignment detected and wrapped: {result.stdout.strip()}")
+
+            # Test 6: Simple env var assignment
+            print("\n6. VAR=value command (simple assignment)...")
+            result = chroot.execute("VAR=hello echo test", capture_output=True)
+            assert result.returncode == 0
+            print(f"   PASS: Simple env var assignment: {result.stdout.strip()}")
+
+            # Test 7: Env var with special characters in value
+            print("\n7. VAR=this)is_demo echo test (special chars in value)...")
+            result = chroot.execute("VAR=this)is_demo echo test", capture_output=True)
+            assert result.returncode == 0
+            print(f"   PASS: Env var with special chars: {result.stdout.strip()}")
+
+        print("\n" + "=" * 60)
+        print("Environment variable assignment tests completed!")
+        print("=" * 60)
+        return True
+
+    except Exception as e:
+        print(f"\nERROR: {type(e).__name__}: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+    finally:
+        shutil.rmtree(chroot_dir)
+
+
 if __name__ == "__main__":
     all_passed = True
 
@@ -459,6 +539,7 @@ if __name__ == "__main__":
     all_passed &= test_empty_string_validation()
     all_passed &= test_whitespace_only_string_validation()
     all_passed &= test_invalid_userspec_validation()
+    all_passed &= test_environment_variable_assignment()
 
     print("\n" + "=" * 60)
     if all_passed:

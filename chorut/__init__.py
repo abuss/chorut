@@ -279,7 +279,7 @@ class ChrootManager:
         Detect if a command string contains shell metacharacters that require bash -c wrapping.
 
         Returns True if the command contains shell features like pipes, redirects,
-        command substitution, logical operators, etc.
+        command substitution, logical operators, environment variable assignments, etc.
         """
         # Shell metacharacters that require shell interpretation
         shell_patterns = [
@@ -300,6 +300,12 @@ class ChrootManager:
         # Skip detection if already wrapped with bash -c
         if command_str.strip().startswith(("bash -c", "sh -c")):
             return False
+
+        # Check for environment variable assignments at the start of the command
+        # Pattern matches: VAR=value command or VAR1=val1 VAR2=val2 command
+        env_var_assignment_pattern = r"^(\w+=\S+\s+)+\w+"
+        if re.match(env_var_assignment_pattern, command_str):
+            return True
 
         # Check for any shell metacharacters outside of quotes
         # This is a simplified approach - a more robust version would need
@@ -561,7 +567,8 @@ class ChrootManager:
             command: Command to execute (defaults to ['/bin/bash']). Can be a list of strings or a single string.
                     When auto_shell=True (default), string commands containing shell metacharacters
                     (pipes |, logical operators &&/||, redirects <>, command substitution `cmd`/$(cmd),
-                    glob patterns *, variable expansion $VAR, etc.) are automatically wrapped with 'bash -c'.
+                    glob patterns *, variable expansion $VAR, environment variable assignments VAR=value cmd, etc.)
+                    are automatically wrapped with 'bash -c'.
                     Simple commands are parsed with shlex.split().
                     Set auto_shell=False during initialization to disable this behavior and require explicit 'bash -c' wrapping.
             userspec: User specification in format 'user' or 'user:group'
@@ -590,6 +597,8 @@ class ChrootManager:
             result = chroot.execute("echo hello && echo world", capture_output=True)     # Logical operators
             result = chroot.execute("echo `date`", capture_output=True)                  # Command substitution
             result = chroot.execute("ls *.txt", capture_output=True)                     # Glob patterns
+            result = chroot.execute("PATH=/opt/bin:$PATH ls", capture_output=True)      # Environment variables
+            result = chroot.execute("VAR=value command", capture_output=True)            # Env var assignments
 
             # Manual shell invocation still works:
             result = chroot.execute("bash -c 'echo hello && echo world'", capture_output=True)
