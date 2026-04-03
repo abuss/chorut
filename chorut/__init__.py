@@ -97,7 +97,16 @@ class MountManager:
                 subprocess.run(["umount", mount_point], check=True, capture_output=True)
                 logger.debug(f"Unmounted {mount_point}")
             except subprocess.CalledProcessError as e:
-                raise MountError(f"Failed to unmount {mount_point}: {e.stderr}") from None
+                # If regular unmount fails because target is busy, try lazy unmount
+                if b"target is busy" in e.stderr or b"device is busy" in e.stderr:
+                    logger.warning(f"Mount point {mount_point} is busy, attempting lazy unmount")
+                    try:
+                        subprocess.run(["umount", "--lazy", mount_point], check=True, capture_output=True)
+                        logger.debug(f"Lazy unmounted {mount_point}")
+                    except subprocess.CalledProcessError as lazy_error:
+                        raise MountError(f"Failed to lazy unmount {mount_point}: {lazy_error.stderr}") from None
+                else:
+                    raise MountError(f"Failed to unmount {mount_point}: {e.stderr}") from None
 
         for mount_point in self.active_lazy:
             try:
