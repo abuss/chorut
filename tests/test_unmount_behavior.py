@@ -3,11 +3,11 @@
 Test to verify unmount behavior with busy mounts.
 """
 
-import unittest
-from unittest.mock import Mock, patch, call
 import subprocess
+import unittest
+from unittest.mock import Mock, patch
 
-from chorut import MountManager, MountError
+from chorut import MountError, MountManager
 
 
 class TestUnmountBehavior(unittest.TestCase):
