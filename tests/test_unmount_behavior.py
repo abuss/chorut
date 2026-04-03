@@ -7,6 +7,8 @@ import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
+import pytest
+
 from chorut import MountError, MountManager
 
 
@@ -49,12 +51,12 @@ class TestUnmountBehavior(unittest.TestCase):
             manager.unmount_all()
 
             # Verify both calls were made
-            self.assertEqual(mock_run.call_count, 2)
+            assert mock_run.call_count == 2
 
             # Verify the calls
             calls = mock_run.call_args_list
-            self.assertEqual(calls[0][0][0], ["umount", "/test/mount"])
-            self.assertEqual(calls[1][0][0], ["umount", "--lazy", "/test/mount"])
+            assert calls[0][0][0] == ["umount", "/test/mount"]
+            assert calls[1][0][0] == ["umount", "--lazy", "/test/mount"]
 
     def test_unmount_device_busy_fallback(self):
         """Test that device busy errors also fall back to lazy unmount."""
@@ -75,9 +77,9 @@ class TestUnmountBehavior(unittest.TestCase):
             manager.unmount_all()
 
             # Verify lazy unmount was attempted
-            self.assertEqual(mock_run.call_count, 2)
+            assert mock_run.call_count == 2
             calls = mock_run.call_args_list
-            self.assertEqual(calls[1][0][0], ["umount", "--lazy", "/test/mount"])
+            assert calls[1][0][0] == ["umount", "--lazy", "/test/mount"]
 
     def test_unmount_other_error_raises(self):
         """Test that other unmount errors are raised immediately."""
@@ -91,12 +93,12 @@ class TestUnmountBehavior(unittest.TestCase):
             )
 
             # Should raise MountError
-            with self.assertRaises(MountError) as cm:
+            with pytest.raises(MountError) as cm:
                 manager.unmount_all()
 
             # Should not attempt lazy unmount for non-busy errors
-            self.assertEqual(mock_run.call_count, 1)
-            self.assertIn("not mounted", str(cm.exception))
+            assert mock_run.call_count == 1
+            assert "not mounted" in str(cm.value)
 
     def test_lazy_unmount_failure_raises(self):
         """Test that lazy unmount failure is reported."""
@@ -117,11 +119,11 @@ class TestUnmountBehavior(unittest.TestCase):
             mock_run.side_effect = [error1, error2]
 
             # Should raise MountError about lazy unmount failure
-            with self.assertRaises(MountError) as cm:
+            with pytest.raises(MountError) as cm:
                 manager.unmount_all()
 
-            self.assertIn("Failed to lazy unmount", str(cm.exception))
-            self.assertEqual(mock_run.call_count, 2)
+            assert "Failed to lazy unmount" in str(cm.value)
+            assert mock_run.call_count == 2
 
     def test_multiple_mounts_with_mixed_busy(self):
         """Test unmounting multiple mounts where some are busy."""
@@ -146,7 +148,7 @@ class TestUnmountBehavior(unittest.TestCase):
             manager.unmount_all()
 
             # Verify all unmounts completed
-            self.assertEqual(mock_run.call_count, 4)
+            assert mock_run.call_count == 4
 
 
 if __name__ == "__main__":
